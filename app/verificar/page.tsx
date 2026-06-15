@@ -6,6 +6,9 @@ import { IconBell, IconCheck, IconChevL, IconHelp, IconShield } from "@/componen
 import { SignupFooter, SignupShell } from "@/components/signup-shell";
 import { ApiError, authApi } from "@/lib/api";
 
+/** Liga o "Modo desenvolvedor" na UI. O servidor só honra se DEV_AUTH_BYPASS=true. */
+const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
+
 type Phase = "email" | "code";
 
 export default function VerifyEmailPage() {
@@ -15,6 +18,7 @@ export default function VerifyEmailPage() {
   const [code, setCode] = useState<string[]>(["", "", "", "", "", ""]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dev, setDev] = useState(false);
   const cellRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const sendCode = async () => {
@@ -50,6 +54,25 @@ export default function VerifyEmailPage() {
       router.push("/inscricao");
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Código inválido ou expirado.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // DEV ONLY — pula a verificação por e-mail; o servidor valida o flag DEV_AUTH_BYPASS.
+  const devContinue = async () => {
+    setErr("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErr("Informe um e-mail válido.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await authApi.devToken(email);
+      sessionStorage.setItem("prn_registration", JSON.stringify({ registrationToken: res.registrationToken, email }));
+      router.push("/inscricao");
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Modo desenvolvedor indisponível neste ambiente.");
     } finally {
       setLoading(false);
     }
@@ -187,8 +210,27 @@ export default function VerifyEmailPage() {
         Não está recebendo o código? Verifique a pasta de spam ou confirme o e-mail digitado.
       </div>
 
+      {DEV_MODE && phase === "email" && (
+        <label
+          className="checkbox"
+          style={{ marginTop: 14, padding: "10px 12px", border: "1px dashed var(--amber-600)", borderRadius: 8, background: "var(--amber-50)" }}
+        >
+          <input type="checkbox" checked={dev} onChange={() => setDev((v) => !v)} />
+          <span className="box" />
+          <span>
+            <strong>Modo desenvolvedor</strong> — pular a verificação por e-mail e a exigência de CPF
+            pré-selecionado (somente em ambiente local).
+          </span>
+        </label>
+      )}
+
       {phase === "email" ? (
-        <SignupFooter canBack={false} nextLabel={loading ? "Enviando…" : "Enviar código"} disabled={loading} onNext={sendCode} />
+        <SignupFooter
+          canBack={false}
+          nextLabel={loading ? "Aguarde…" : dev ? "Pular e criar conta (dev)" : "Enviar código"}
+          disabled={loading}
+          onNext={dev ? devContinue : sendCode}
+        />
       ) : (
         <SignupFooter canBack={false} nextLabel={loading ? "Verificando…" : "Verificar e continuar"} disabled={loading} onNext={verify} />
       )}

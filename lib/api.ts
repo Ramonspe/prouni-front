@@ -1,6 +1,9 @@
 import type {
   ApplicationDto,
   ApplicationEventDto,
+  CampusDto,
+  CourseDto,
+  DocumentCategoryDto,
   FamilyMemberDto,
   FamilyMemberInput,
   RequiredDocumentsDto,
@@ -126,6 +129,14 @@ export const authApi = {
       auth: false,
       retry: false,
     }),
+  /** DEV ONLY — token de registro sem código (servidor só aceita com DEV_AUTH_BYPASS). */
+  devToken: (email: string) =>
+    apiFetch<{ registrationToken: string; email: string }>("/account/dev-token", {
+      method: "POST",
+      body: { email },
+      auth: false,
+      retry: false,
+    }),
   register: (registrationToken: string, body: Record<string, unknown>) =>
     apiFetch<AuthResponse>("/account/register", {
       method: "POST",
@@ -136,12 +147,31 @@ export const authApi = {
     }),
 };
 
+/** Catálogo do ciclo ativo (público). */
+export const cyclesApi = {
+  active: () => apiFetch("/cycles/active", { auth: false, retry: false }),
+  /** Matriz documental completa vigente, agrupada por categoria. */
+  documentTypes: () =>
+    apiFetch<{ categories: DocumentCategoryDto[] }>("/cycles/active/document-types", { auth: false, retry: false }),
+};
+
+/** Cursos e campi (público). */
+export const coursesApi = {
+  campuses: () => apiFetch<CampusDto[]>("/campuses", { auth: false, retry: false }),
+  courses: (campus?: string) =>
+    apiFetch<CourseDto[]>(`/courses${campus ? `?campus=${encodeURIComponent(campus)}` : ""}`, { auth: false, retry: false }),
+};
+
 /** Inscrição do candidato autenticado. */
 export const applicationsApi = {
   me: () => apiFetch<ApplicationDto>("/applications/me"),
   events: (id: string) => apiFetch<ApplicationEventDto[]>(`/applications/${id}/events`),
   /** Lista exata de documentos exigidos, resolvida a partir dos dados da inscrição. */
   requiredDocuments: (id: string) => apiFetch<RequiredDocumentsDto>(`/applications/${id}/required-documents`),
+  enem: (id: string, body: { edition: number; registration: string }) =>
+    apiFetch<ApplicationDto>(`/applications/${id}/enem`, { method: "PATCH", body }),
+  course: (id: string, body: { courseId: string }) =>
+    apiFetch<ApplicationDto>(`/applications/${id}/course`, { method: "PATCH", body }),
 };
 
 /** Grupo familiar da inscrição. */
