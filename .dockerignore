@@ -1,0 +1,10 @@
+node_modules
+.next
+shared/dist
+shared/node_modules
+coverage
+.env
+.env.*
+!.env.example
+.git
+*.log
