@@ -20,6 +20,7 @@ import { SignupFooter, SignupShell } from "@/components/signup-shell";
 import { CURSOS, SIGNUP_DOC_CATS } from "@/lib/mock-data";
 import { ApiError, authApi, type AuthResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { INCOME_SITUATIONS } from "@prouni/shared";
 
 type WizardStep = "account" | "enem" | "curso" | "familia" | "docs";
 const WIZARD_STEPS: WizardStep[] = ["account", "enem", "curso", "familia", "docs"];
@@ -353,19 +354,22 @@ interface Membro {
   idade: number | string;
   cpf: string;
   prof: string;
+  sit: string; // situação de renda (define os documentos do membro)
   renda: string;
   docs: { req: number; sent: number };
 }
 
 function StepFamilia() {
   const [membros, setMembros] = useState<Membro[]>([
-    { nome: "Maria Eduarda Souza Pereira", parent: "Estudante", idade: 18, cpf: "412.890.331-22", prof: "Estudante", renda: "—", docs: { req: 4, sent: 4 } },
-    { nome: "Carlos Souza Pereira", parent: "Pai", idade: 47, cpf: "182.337.901-05", prof: "Motorista autônomo", renda: "2.850,00", docs: { req: 6, sent: 4 } },
-    { nome: "Lúcia Vasconcelos Souza", parent: "Mãe", idade: 44, cpf: "201.554.812-33", prof: "Auxiliar administrativa", renda: "2.412,50", docs: { req: 6, sent: 6 } },
-    { nome: "Pedro Souza Pereira", parent: "Irmão", idade: 13, cpf: "—", prof: "Estudante", renda: "—", docs: { req: 2, sent: 1 } },
+    { nome: "Maria Eduarda Souza Pereira", parent: "Estudante", idade: 18, cpf: "412.890.331-22", prof: "Estudante", sit: "SEM_RENDA", renda: "—", docs: { req: 4, sent: 4 } },
+    { nome: "Carlos Souza Pereira", parent: "Pai", idade: 47, cpf: "182.337.901-05", prof: "Motorista autônomo", sit: "AUTONOMO_LIBERAL", renda: "2.850,00", docs: { req: 6, sent: 4 } },
+    { nome: "Lúcia Vasconcelos Souza", parent: "Mãe", idade: 44, cpf: "201.554.812-33", prof: "Auxiliar administrativa", sit: "ASSALARIADO", renda: "2.412,50", docs: { req: 6, sent: 6 } },
+    { nome: "Pedro Souza Pereira", parent: "Irmão", idade: 13, cpf: "—", prof: "Estudante", sit: "", renda: "—", docs: { req: 2, sent: 1 } },
   ]);
   const add = () =>
-    setMembros([...membros, { nome: "", parent: "", idade: "", cpf: "", prof: "", renda: "", docs: { req: 4, sent: 0 } }]);
+    setMembros([...membros, { nome: "", parent: "", idade: "", cpf: "", prof: "", sit: "", renda: "", docs: { req: 4, sent: 0 } }]);
+  const setSit = (i: number, value: string) =>
+    setMembros((ms) => ms.map((m, j) => (j === i ? { ...m, sit: value } : m)));
 
   return (
     <>
@@ -419,6 +423,29 @@ function StepFamilia() {
                   <span><span className="muted">Profissão:</span> {m.prof}</span>
                   <span><span className="muted">Renda:</span> <span className="mono">{m.renda === "—" ? "—" : `R$ ${m.renda}`}</span></span>
                 </div>
+                {+m.idade >= 18 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span className="muted small">Situação de renda:</span>
+                      <select
+                        className="input"
+                        style={{ height: 32, padding: "2px 8px", fontSize: 12.5, maxWidth: 380 }}
+                        value={m.sit}
+                        onChange={(e) => setSit(i, e.target.value)}
+                      >
+                        <option value="">Selecione…</option>
+                        {INCOME_SITUATIONS.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {m.sit && (
+                      <div className="muted small" style={{ marginTop: 4 }}>
+                        Documento esperado: {INCOME_SITUATIONS.find((s) => s.value === m.sit)?.hint}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="membro-docs">
                 <div className="muted small" style={{ marginBottom: 4 }}>Documentos</div>

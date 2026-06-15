@@ -1,4 +1,12 @@
-import type { ApplicationDto, ApplicationEventDto } from "@prouni/shared";
+import type {
+  ApplicationDto,
+  ApplicationEventDto,
+  FamilyMemberDto,
+  FamilyMemberInput,
+  RequiredDocumentsDto,
+  SocioFormDto,
+  SocioFormInput,
+} from "@prouni/shared";
 
 // Cliente HTTP do portal. Access token em MEMÓRIA (nunca localStorage);
 // refresh token vive em cookie httpOnly setado pela API. Em 401, tenta um
@@ -132,4 +140,25 @@ export const authApi = {
 export const applicationsApi = {
   me: () => apiFetch<ApplicationDto>("/applications/me"),
   events: (id: string) => apiFetch<ApplicationEventDto[]>(`/applications/${id}/events`),
+  /** Lista exata de documentos exigidos, resolvida a partir dos dados da inscrição. */
+  requiredDocuments: (id: string) => apiFetch<RequiredDocumentsDto>(`/applications/${id}/required-documents`),
+};
+
+/** Grupo familiar da inscrição. */
+export const familyApi = {
+  list: (appId: string) => apiFetch<FamilyMemberDto[]>(`/applications/${appId}/family`),
+  create: (appId: string, body: FamilyMemberInput) =>
+    apiFetch<FamilyMemberDto>(`/applications/${appId}/family`, { method: "POST", body }),
+  update: (memberId: string, body: Partial<FamilyMemberInput>) =>
+    apiFetch<FamilyMemberDto>(`/family/${memberId}`, { method: "PATCH", body }),
+  remove: (memberId: string) => apiFetch<void>(`/family/${memberId}`, { method: "DELETE" }),
+};
+
+/** Ficha socioeconômica (autosave por seção + envio). */
+export const socioApi = {
+  get: (appId: string) => apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`),
+  patch: (appId: string, body: SocioFormInput) =>
+    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`, { method: "PATCH", body }),
+  submit: (appId: string) =>
+    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form/submit`, { method: "POST" }),
 };

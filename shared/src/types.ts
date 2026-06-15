@@ -75,6 +75,48 @@ export interface TimelineItemData {
   body?: string;
 }
 
+/* ============ Situação de renda do integrante (driver dos documentos) ============ */
+// A situação declarada por cada membro maior de 18 define QUAIS documentos de renda
+// ele precisa enviar (espelha os blocos da "Relação de documentos" oficial).
+export type IncomeSituation =
+  | "ASSALARIADO" // CLT registrado ou servidor público → contracheques
+  | "AUTONOMO_LIBERAL" // autônomo ou profissional liberal → DECORE
+  | "INFORMAL" // trabalho informal sem vínculo → declaração
+  | "SEM_RENDA" // do lar / sem atividade remunerada → declaração de ausência de renda
+  | "DESEMPREGADO" // rescisão + seguro-desemprego
+  | "MEI" // microempreendedor individual
+  | "EMPRESARIO" // sócio(a)/proprietário(a) de empresa → DECORE + PJ
+  | "PRODUTOR_RURAL"
+  | "APOSENTADO_PENSIONISTA"
+  | "ESTAGIARIO_APRENDIZ";
+
+/** Lista para o <select> da ficha — rótulo + dica do documento esperado. */
+export const INCOME_SITUATIONS: { value: IncomeSituation; label: string; hint: string }[] = [
+  { value: "ASSALARIADO", label: "Empregado(a) com carteira (CLT) ou servidor(a) público(a)", hint: "Contracheques dos últimos 3 meses" },
+  { value: "AUTONOMO_LIBERAL", label: "Autônomo(a) ou profissional liberal", hint: "DECORE dos últimos 3 meses (com CRC do contador)" },
+  { value: "INFORMAL", label: "Trabalhador(a) informal (sem vínculo)", hint: "Declaração de trabalho informal (gov.br)" },
+  { value: "SEM_RENDA", label: "Sem atividade remunerada / do lar", hint: "Declaração de ausência de renda (gov.br)" },
+  { value: "DESEMPREGADO", label: "Desempregado(a)", hint: "Rescisão contratual + seguro-desemprego (se houver)" },
+  { value: "MEI", label: "Microempreendedor(a) individual (MEI)", hint: "Cartão CNPJ + DASN-SIMEI do ano anterior" },
+  { value: "EMPRESARIO", label: "Sócio(a) ou proprietário(a) de empresa", hint: "DECORE + IR da PJ + extratos PJ" },
+  { value: "PRODUTOR_RURAL", label: "Produtor(a) rural", hint: "Bloco de Produtor + ITR ou declaração do sindicato" },
+  { value: "APOSENTADO_PENSIONISTA", label: "Aposentado(a) ou pensionista", hint: "Demonstrativo do benefício do último mês" },
+  { value: "ESTAGIARIO_APRENDIZ", label: "Estagiário(a) ou jovem aprendiz", hint: "Contrato + comprovante de bolsa-auxílio" },
+];
+
+export type HousingTenure = "PROPRIO" | "ALUGADO" | "CEDIDO" | "FINANCIADO" | "IRREGULAR";
+
+/** Como um tipo de documento se multiplica e quando é exigido (matriz dinâmica). */
+export type DocScope = "APPLICATION" | "EACH_MEMBER" | "EACH_ADULT";
+export type DocCondition =
+  | "ALWAYS" // sempre, dentro do escopo
+  | "INCOME_SITUATION" // quando a situação de renda do membro ∈ conditionValues
+  | "HOUSING_TENURE" // quando a posse do imóvel ∈ conditionValues
+  | "HAS_VEHICLE" // quando a família declarou veículo
+  | "OPT_IN_COTAS" // quando a inscrição opta por cotas
+  | "OTHER_INCOME" // quando a família declara a renda extra correspondente
+  | "GUARDIANSHIP"; // quando os pais não compõem o grupo familiar
+
 /* ===================== DTOs de resposta da API (M2) ===================== */
 
 export interface CampusDto {
@@ -133,6 +175,7 @@ export interface FamilyMemberDto {
   relationship: string;
   maritalStatus: string | null;
   occupation: string | null;
+  incomeSituation: IncomeSituation | null;
   grossIncome: string | null;
   isStudent: boolean;
   isFinancialResponsible: boolean;
@@ -145,7 +188,9 @@ export interface DocumentTypeDto {
   code: string;
   name: string;
   required: boolean;
-  perFamilyMember: boolean;
+  scope: DocScope;
+  condition: DocCondition;
+  conditionValues: string[];
   appliesTo: string | null;
 }
 
@@ -188,10 +233,47 @@ export interface SocioFormDto {
     propertyRegistry: string | null;
     hasOtherIncome: boolean;
     hasVehicle: boolean;
+    // Flags de "outras rendas"/situação que disparam documentos condicionais.
+    receivesAlimony: boolean; // recebe pensão alimentícia
+    paysAlimony: boolean; // paga pensão alimentícia (dedução de renda)
+    receivesRentalIncome: boolean; // recebe renda de aluguel/locação
+    receivesThirdPartyHelp: boolean; // recebe ajuda financeira de terceiros
+    receivesSocialBenefit: boolean; // recebe benefício social (BPC, Bolsa Família…)
+    parentsOutsideGroup: boolean; // pais do estudante não compõem o grupo (guarda/tutela)
     submittedAt: string | null;
   };
   incomes: { id: string; label: string; amount: string; sign: number }[];
   expenses: { id: string; label: string; amount: string }[];
   vehicles: { id: string; description: string; value: string | null; installment: string | null; status: string | null }[];
   summary: SocioSummaryDto;
+}
+
+/* ============ Documentos exigidos (matriz resolvida para a inscrição) ============ */
+// Resultado de aplicar a matriz documental aos dados da inscrição: a lista concreta
+// de documentos a enviar, já multiplicada por integrante/adulto e filtrada por condição.
+export interface RequiredDocumentDto {
+  key: string; // estável: `${code}:${memberId ?? 'app'}` — usado como slot
+  typeId: string;
+  code: string;
+  name: string;
+  required: boolean;
+  scope: DocScope;
+  conditionLabel: string | null; // texto amigável da condição (ex.: "Imóvel alugado")
+  member: { id: string; name: string; relationship: string } | null; // a quem se refere
+}
+
+export interface RequiredDocumentsCategoryDto {
+  id: string;
+  code: string;
+  title: string;
+  colorVar: string | null;
+  items: RequiredDocumentDto[];
+}
+
+export interface RequiredDocumentsDto {
+  applicationId: string;
+  totals: { total: number; required: number; optional: number };
+  /** Avisos quando faltam dados para resolver (ex.: ficha não preenchida). */
+  notes: string[];
+  categories: RequiredDocumentsCategoryDto[];
 }

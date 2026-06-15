@@ -165,6 +165,18 @@ function SectionFamilia() {
           </div>
         ))}
       </div>
+
+      <div className="divider" />
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>
+        Os pais do estudante compõem o grupo familiar declarado?
+      </div>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <label className="radio"><input type="radio" name="guarda" defaultChecked /><span className="dot" /> Sim</label>
+        <label className="radio">
+          <input type="radio" name="guarda" /><span className="dot" /> Não — apresentarei documento de guarda/tutela
+        </label>
+      </div>
     </>
   );
 }
@@ -188,12 +200,38 @@ function SectionMoradia() {
 
       <div className="divider" />
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>Tipo de moradia</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-        {["Casa", "Apartamento", "Próprio", "Alugado", "Cedido"].map((o) => (
-          <label key={o} className="radio" style={{ padding: "10px 12px", border: "1px solid var(--ink-200)", borderRadius: 8, justifyContent: "center" }}>
-            <input type="radio" name="moradia" defaultChecked={o === "Apartamento"} />
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>Tipo de imóvel</div>
+      <div style={{ display: "flex", gap: 18, marginBottom: 16 }}>
+        {["Casa", "Apartamento"].map((o) => (
+          <label key={o} className="radio">
+            <input type="radio" name="htype" defaultChecked={o === "Apartamento"} />
             <span className="dot" /> {o}
+          </label>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>
+        Posse do imóvel{" "}
+        <span className="muted small" style={{ fontWeight: 400 }}>(define os documentos do imóvel)</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+        {([
+          ["Próprio", "IPTU 2026"],
+          ["Alugado", "Contrato + recibo"],
+          ["Cedido", "Declaração do dono"],
+          ["Financiado", "Última prestação"],
+          ["Irregular", "Declaração do morador"],
+        ] as [string, string][]).map(([o, hint]) => (
+          <label
+            key={o}
+            className="radio"
+            style={{ flexDirection: "column", alignItems: "flex-start", padding: "10px 12px", border: "1px solid var(--ink-200)", borderRadius: 8 }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="radio" name="tenure" defaultChecked={o === "Financiado"} />
+              <span className="dot" /> {o}
+            </span>
+            <span className="muted small" style={{ marginTop: 4 }}>{hint}</span>
           </label>
         ))}
       </div>

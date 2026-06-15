@@ -75,6 +75,20 @@ export const courseSelectSchema = z.object({
 });
 export type CourseSelectInput = z.infer<typeof courseSelectSchema>;
 
+/** Situação de renda do integrante — define os documentos de renda exigidos dele. */
+export const incomeSituationSchema = z.enum([
+  "ASSALARIADO",
+  "AUTONOMO_LIBERAL",
+  "INFORMAL",
+  "SEM_RENDA",
+  "DESEMPREGADO",
+  "MEI",
+  "EMPRESARIO",
+  "PRODUTOR_RURAL",
+  "APOSENTADO_PENSIONISTA",
+  "ESTAGIARIO_APRENDIZ",
+]);
+
 export const familyMemberSchema = z.object({
   fullName: z.string().trim().min(2, "Informe o nome"),
   relationship: z.string().trim().min(1, "Informe o parentesco"),
@@ -83,6 +97,7 @@ export const familyMemberSchema = z.object({
   cpf: z.string().optional(),
   maritalStatus: z.string().optional(),
   occupation: z.string().optional(),
+  incomeSituation: incomeSituationSchema.optional(),
   grossIncome: moneyString.optional(),
   isStudent: z.boolean().optional(),
   isFinancialResponsible: z.boolean().optional(),
@@ -123,6 +138,13 @@ export const socioFormSchema = z.object({
   propertyRegistry: z.string().optional(),
   hasOtherIncome: z.boolean().optional(),
   hasVehicle: z.boolean().optional(),
+  // Flags que disparam documentos condicionais (refletem perguntas da ficha).
+  receivesAlimony: z.boolean().optional(),
+  paysAlimony: z.boolean().optional(),
+  receivesRentalIncome: z.boolean().optional(),
+  receivesThirdPartyHelp: z.boolean().optional(),
+  receivesSocialBenefit: z.boolean().optional(),
+  parentsOutsideGroup: z.boolean().optional(),
   incomes: z.array(incomeItemSchema).optional(),
   expenses: z.array(expenseItemSchema).optional(),
   vehicles: z.array(vehicleItemSchema).optional(),
