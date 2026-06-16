@@ -81,6 +81,8 @@ export type CourseSelectInput = z.infer<typeof courseSelectSchema>;
 export const incomeSituationSchema = z.enum([
   "ASSALARIADO",
   "AUTONOMO_LIBERAL",
+  "AUTONOMO",
+  "LIBERAL",
   "INFORMAL",
   "SEM_RENDA",
   "DESEMPREGADO",

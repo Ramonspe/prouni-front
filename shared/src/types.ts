@@ -80,7 +80,9 @@ export interface TimelineItemData {
 // ele precisa enviar (espelha os blocos da "Relação de documentos" oficial).
 export type IncomeSituation =
   | "ASSALARIADO" // CLT registrado ou servidor público → contracheques
-  | "AUTONOMO_LIBERAL" // autônomo ou profissional liberal → DECORE
+  | "AUTONOMO_LIBERAL" // (legado) substituído por AUTONOMO + LIBERAL
+  | "AUTONOMO" // trabalhador autônomo → declaração + RPA
+  | "LIBERAL" // profissional liberal regulamentado → DECORE
   | "INFORMAL" // trabalho informal sem vínculo → declaração
   | "SEM_RENDA" // do lar / sem atividade remunerada → declaração de ausência de renda
   | "DESEMPREGADO" // rescisão + seguro-desemprego
@@ -93,7 +95,8 @@ export type IncomeSituation =
 /** Lista para o <select> da ficha — rótulo + dica do documento esperado. */
 export const INCOME_SITUATIONS: { value: IncomeSituation; label: string; hint: string }[] = [
   { value: "ASSALARIADO", label: "Empregado(a) com carteira (CLT) ou servidor(a) público(a)", hint: "Contracheques dos últimos 3 meses" },
-  { value: "AUTONOMO_LIBERAL", label: "Autônomo(a) ou profissional liberal", hint: "DECORE dos últimos 3 meses (com CRC do contador)" },
+  { value: "AUTONOMO", label: "Trabalhador(a) autônomo(a)", hint: "Declaração de trabalho autônomo + RPA/extratos" },
+  { value: "LIBERAL", label: "Profissional liberal (profissão regulamentada)", hint: "DECORE dos últimos 3 meses (com CRC do contador)" },
   { value: "INFORMAL", label: "Trabalhador(a) informal (sem vínculo)", hint: "Declaração de trabalho informal (gov.br)" },
   { value: "SEM_RENDA", label: "Sem atividade remunerada / do lar", hint: "Declaração de ausência de renda (gov.br)" },
   { value: "DESEMPREGADO", label: "Desempregado(a)", hint: "Rescisão contratual + seguro-desemprego (se houver)" },
