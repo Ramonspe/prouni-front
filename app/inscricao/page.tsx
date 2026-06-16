@@ -456,7 +456,7 @@ function StepCurso({
   );
 }
 
-function StepFamilia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
+export function StepFamilia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const qc = useQueryClient();
   const members = useQuery({
     queryKey: ["family", appId],

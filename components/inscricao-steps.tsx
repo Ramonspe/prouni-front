@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { socioApi } from "@/lib/api";
+import { applicationsApi, socioApi } from "@/lib/api";
 import type { SocioFormDto, SocioFormInput } from "@prouni/shared";
 import { maskCep } from "@/lib/format";
 import { IconCar, IconHouse, IconInfo, IconShield, IconWallet } from "@/components/icons";
@@ -49,6 +49,7 @@ function useSocioForm(appId: string | null) {
 
 export function StepEstudante({ appId }: { appId: string | null }) {
   const { loading, form, setForm, save } = useSocioForm(appId);
+  const app = useQuery({ queryKey: ["app-me"], queryFn: () => applicationsApi.me(), enabled: !!appId });
   const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   if (loading) return <p className="muted">Carregando…</p>;
@@ -58,6 +59,12 @@ export function StepEstudante({ appId }: { appId: string | null }) {
       <p className="signup-sub">
         Nome, CPF e curso já vieram das etapas anteriores. Complete os dados acadêmicos abaixo.
       </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 16 }}>
+        <div className="stat"><div className="stat-label">Curso</div><div style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.course?.name ?? "—"}</div></div>
+        <div className="stat"><div className="stat-label">Campus</div><div style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.course?.campus.name ?? "—"}</div></div>
+        <div className="stat"><div className="stat-label">Protocolo</div><div className="mono" style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.protocol ?? "—"}</div></div>
+      </div>
 
       <div className="form-grid" style={{ marginTop: 18 }}>
         <div className="field col-6">
