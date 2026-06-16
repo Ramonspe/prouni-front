@@ -245,6 +245,8 @@ export interface SocioFormDto {
     rentValue: string | null;
     installmentValue: string | null;
     propertyRegistry: string | null;
+    cededOwnerInfo: string | null;
+    landline: string | null;
     hasOtherIncome: boolean;
     hasVehicle: boolean;
     // Flags de "outras rendas"/situação que disparam documentos condicionais.
@@ -260,7 +262,7 @@ export interface SocioFormDto {
   };
   incomes: { id: string; label: string; amount: string; sign: number }[];
   expenses: { id: string; label: string; amount: string }[];
-  vehicles: { id: string; description: string; value: string | null; installment: string | null; status: string | null }[];
+  vehicles: { id: string; description: string; value: string | null; installment: string | null; status: string | null; cededBy: string | null }[];
   summary: SocioSummaryDto;
 }
 

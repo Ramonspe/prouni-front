@@ -112,7 +112,7 @@ const TENURES: [string, string, string][] = [
 export function StepMoradia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
-  const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null };
+  const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null, cededBy: null };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
@@ -122,7 +122,7 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
     setVehicles([{ ...merged, id: veh.id || "tmp" }]);
     save({
       vehicles: merged.description
-        ? [{ description: merged.description, value: merged.value ?? undefined, installment: merged.installment ?? undefined, status: (merged.status as never) ?? undefined }]
+        ? [{ description: merged.description, value: merged.value ?? undefined, installment: merged.installment ?? undefined, status: (merged.status as never) ?? undefined, cededBy: merged.cededBy ?? undefined }]
         : [],
     });
   };
@@ -144,6 +144,8 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         <div className="field col-4"><label className="field-label">Bairro</label><input className="input" defaultValue={form.neighborhood ?? ""} onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }} /></div>
         <div className="field col-3"><label className="field-label">CEP</label><input className="input" inputMode="numeric" defaultValue={form.zipCode ?? ""} onChange={(e) => { e.target.value = maskCep(e.target.value); }} onBlur={(e) => { setField({ zipCode: e.target.value }); save({ zipCode: e.target.value }); }} /></div>
         <div className="field col-5"><label className="field-label">Cidade / Estado</label><input className="input" defaultValue={[form.city, form.state].filter(Boolean).join(" / ")} onBlur={(e) => { const [c, s] = e.target.value.split("/").map((x) => x.trim()); setField({ city: c, state: s }); save({ city: c, state: s }); }} /></div>
+        <div className="field col-12"><label className="field-label">Ponto de referência</label><input className="input" defaultValue={form.reference ?? ""} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Telefone fixo</label><input className="input" inputMode="numeric" defaultValue={form.landline ?? ""} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
       </div>
 
       <div className="divider" />
@@ -186,6 +188,9 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         {form.tenure === "PROPRIO" && (
           <div className="field col-4"><label className="field-label">Nº de matrícula do imóvel</label><input className="input" defaultValue={form.propertyRegistry ?? ""} onBlur={(e) => { setField({ propertyRegistry: e.target.value }); save({ propertyRegistry: e.target.value }); }} /></div>
         )}
+        {form.tenure === "CEDIDO" && (
+          <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)</label><input className="input" defaultValue={form.cededOwnerInfo ?? ""} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
+        )}
       </div>
 
       <div className="divider" />
@@ -208,6 +213,9 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
               <option value="CEDIDO">Cedido</option>
             </select>
           </div>
+          {veh.status === "CEDIDO" && (
+            <div className="field col-8"><label className="field-label">Cedido por quem?</label><input className="input" defaultValue={veh.cededBy ?? ""} onBlur={(e) => saveVehicle({ cededBy: e.target.value })} /></div>
+          )}
         </div>
       )}
 
@@ -225,9 +233,15 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
 /* ============ Passo: Renda e despesas ============ */
 
 const EXPENSE_LABELS = [
-  "Água", "Luz", "Condomínio", "Celular / Internet / TV", "Plano de saúde",
-  "Cartão de crédito", "Alimentação", "Transporte", "Despesas médicas / medicação", "Outras despesas",
+  "Água", "Luz", "Gás", "Condomínio", "Telefone fixo", "Celular", "Internet / TV",
+  "Plano de saúde", "Despesas médicas / medicação", "Diarista / doméstica",
+  "Alimentação (mercado, padaria)", "Transporte coletivo (ônibus)", "Transporte escolar",
+  "Combustível (veículo próprio)", "Cartão de crédito", "Outros financiamentos",
+  "Atividades extracurriculares / cursos", "Outra despesa",
 ];
+
+// "Outras rendas" e "Outras rendas não contabilizadas" da ficha (valores opcionais, sign +1).
+const EXTRA_INCOME_LABELS = ["Aplicação financeira", "Vale alimentação", "Bolsa Família", "Outras rendas"];
 
 interface YesNoQ { key: keyof Form; label: string; income?: { label: string; sign: number } }
 const INCOME_QUESTIONS: YesNoQ[] = [
@@ -288,6 +302,22 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
                 <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={incomeOf(qst.income.label)} onBlur={(e) => saveIncome(qst.income!.label, qst.income!.sign, e.target.value)} />
               </div>
             )}
+          </div>
+        ))}
+      </div>
+
+      <div className="divider" />
+
+      <h3 className="section-title">Outras rendas e benefícios</h3>
+      <p className="muted small" style={{ marginTop: -8, marginBottom: 14 }}>Informe os valores mensais que se aplicam (deixe em branco o que não houver).</p>
+      <div className="form-grid">
+        {EXTRA_INCOME_LABELS.map((label) => (
+          <div key={label} className="field col-3">
+            <label className="field-label">{label}</label>
+            <div className="input-with-icon">
+              <span className="icon-prefix" style={{ left: 12, color: "var(--ink-500)", fontSize: 12, pointerEvents: "none" }}>R$</span>
+              <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={incomeOf(label)} onBlur={(e) => saveIncome(label, 1, e.target.value)} />
+            </div>
           </div>
         ))}
       </div>

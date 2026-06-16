@@ -607,6 +607,24 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       />
                       Responsável financeiro
                     </label>
+                    <label className="muted small">
+                      Escola / Universidade{" "}
+                      <input
+                        className="input"
+                        style={{ width: 200, height: 28 }}
+                        defaultValue={m.schoolName ?? ""}
+                        onBlur={(e) => update(m.id, { schoolName: e.target.value })}
+                      />
+                    </label>
+                    <label className="muted small">
+                      Valor da parcela (R$){" "}
+                      <input
+                        className="input mono"
+                        style={{ width: 120, height: 28 }}
+                        defaultValue={m.schoolFee ?? ""}
+                        onBlur={(e) => update(m.id, { schoolFee: toMoney(e.target.value) })}
+                      />
+                    </label>
                   </div>
                   {(m.age ?? 0) >= 18 && (
                     <div style={{ marginTop: 8 }}>

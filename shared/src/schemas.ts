@@ -123,6 +123,7 @@ const vehicleItemSchema = z.object({
   value: moneyString.optional(),
   installment: moneyString.optional(),
   status: z.enum(["PROPRIO", "FINANCIADO", "CEDIDO"]).optional(),
+  cededBy: z.string().optional(),
 });
 
 /** Ficha socioeconômica — todos os campos opcionais (autosave por seção). */
@@ -142,6 +143,8 @@ export const socioFormSchema = z.object({
   rentValue: moneyString.optional(),
   installmentValue: moneyString.optional(),
   propertyRegistry: z.string().optional(),
+  landline: z.string().optional(),
+  cededOwnerInfo: z.string().optional(),
   hasOtherIncome: z.boolean().optional(),
   hasVehicle: z.boolean().optional(),
   // Flags que disparam documentos condicionais (refletem perguntas da ficha).
