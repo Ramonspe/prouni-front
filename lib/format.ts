@@ -27,3 +27,29 @@ export function formatBRL(value: string | number | null | undefined): string {
   if (Number.isNaN(n)) return "—";
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+
+// ---- Máscaras de digitação (formatam enquanto o usuário digita) ----
+
+/** CPF → 000.000.000-00 (limita a 11 dígitos). */
+export function maskCpf(value: string): string {
+  return value
+    .replace(/\D/g, "")
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+/** Celular → (00) 00000-0000 (aceita fixo de 10 ou celular de 11 dígitos). */
+export function maskPhone(value: string): string {
+  const d = value.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 10) {
+    return d.replace(/(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d{1,4})$/, "$1-$2");
+  }
+  return d.replace(/(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d{1,4})$/, "$1-$2");
+}
+
+/** CEP → 00000-000. */
+export function maskCep(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 8).replace(/(\d{5})(\d{1,3})$/, "$1-$2");
+}

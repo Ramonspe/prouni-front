@@ -52,6 +52,8 @@ export const registerSchema = z
     confirmPassword: z.string(),
     acceptTerms: z.boolean().refine((v) => v === true, "É necessário aceitar os termos"),
     optInCotas: z.boolean().optional(),
+    optInPcd: z.boolean().optional(),
+    optInImt: z.boolean().optional(),
   })
   .refine((d) => d.password === d.confirmPassword, {
     message: "As senhas não coincidem",
@@ -97,7 +99,9 @@ export const familyMemberSchema = z.object({
   cpf: z.string().optional(),
   maritalStatus: z.string().optional(),
   occupation: z.string().optional(),
-  incomeSituation: incomeSituationSchema.optional(),
+  incomeSituations: z.array(incomeSituationSchema).optional(),
+  receivesCommissionOvertime: z.boolean().optional(),
+  companyInactive: z.boolean().optional(),
   grossIncome: moneyString.optional(),
   isStudent: z.boolean().optional(),
   isFinancialResponsible: z.boolean().optional(),
@@ -145,6 +149,8 @@ export const socioFormSchema = z.object({
   receivesThirdPartyHelp: z.boolean().optional(),
   receivesSocialBenefit: z.boolean().optional(),
   parentsOutsideGroup: z.boolean().optional(),
+  shouldReceiveAlimony: z.boolean().optional(),
+  hasUndeclaredAssets: z.boolean().optional(),
   incomes: z.array(incomeItemSchema).optional(),
   expenses: z.array(expenseItemSchema).optional(),
   vehicles: z.array(vehicleItemSchema).optional(),

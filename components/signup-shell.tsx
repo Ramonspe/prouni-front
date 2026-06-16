@@ -8,7 +8,10 @@ export const SIGNUP_STEPS = [
   { id: "account", label: "Criação de acesso" },
   { id: "enem", label: "ENEM e elegibilidade" },
   { id: "curso", label: "Curso e campus" },
+  { id: "estudante", label: "Dados do estudante" },
   { id: "familia", label: "Composição familiar" },
+  { id: "moradia", label: "Moradia e bens" },
+  { id: "renda", label: "Renda e despesas" },
   { id: "docs", label: "Documentos comprobatórios" },
   { id: "revisao", label: "Revisão e envio" },
 ] as const;

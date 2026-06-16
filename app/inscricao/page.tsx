@@ -18,18 +18,25 @@ import {
   IconUser,
 } from "@/components/icons";
 import { SignupFooter, SignupShell } from "@/components/signup-shell";
-import { ApiError, applicationsApi, authApi, coursesApi, cyclesApi, familyApi, type AuthResponse } from "@/lib/api";
+import { StepEstudante, StepMoradia, StepRendaDespesas, StepRevisao } from "@/components/inscricao-steps";
+import { ApiError, applicationsApi, authApi, coursesApi, familyApi, socioApi, type AuthResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { maskCpf, maskPhone } from "@/lib/format";
 import {
   INCOME_SITUATIONS,
   registerSchema,
   type ApplicationDto,
-  type DocumentCategoryDto,
   type FamilyMemberInput,
+  type RequiredDocumentsDto,
+  type SocioFormInput,
 } from "@prouni/shared";
 
-type WizardStep = "account" | "enem" | "curso" | "familia" | "docs";
-const WIZARD_STEPS: WizardStep[] = ["account", "enem", "curso", "familia", "docs"];
+type WizardStep = "account" | "enem" | "curso" | "estudante" | "familia" | "moradia" | "renda" | "docs" | "revisao";
+const WIZARD_STEPS: WizardStep[] = ["account", "enem", "curso", "estudante", "familia", "moradia", "renda", "docs", "revisao"];
+
+const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const DOB_DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+const DOB_YEARS = Array.from({ length: 2014 - 1940 + 1 }, (_, i) => String(2014 - i));
 
 /** Normaliza um valor digitado para a string monetária canônica "1234.56". */
 function toMoney(raw: string): string | undefined {
@@ -58,11 +65,21 @@ function StepAccount({
   });
   const [acceptTerms, setAcceptTerms] = useState(true);
   const [optInCotas, setOptInCotas] = useState(false);
+  const [optInPcd, setOptInPcd] = useState(false);
+  const [optInImt, setOptInImt] = useState(false);
   const [err, setErr] = useState("");
   const [fe, setFe] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const [dob, setDob] = useState({ d: "", m: "", y: "" });
+  const updateDob = (patch: Partial<typeof dob>) => {
+    const nx = { ...dob, ...patch };
+    setDob(nx);
+    const bd = nx.d && nx.m && nx.y ? `${nx.d.padStart(2, "0")}/${nx.m.padStart(2, "0")}/${nx.y}` : "";
+    setForm((f) => ({ ...f, birthDate: bd }));
+  };
 
   const submit = async () => {
     setErr("");
@@ -77,6 +94,8 @@ function StepAccount({
       confirmPassword: form.confirmPassword,
       acceptTerms,
       optInCotas,
+      optInPcd,
+      optInImt,
     });
     if (!parsed.success) {
       const errs: Record<string, string> = {};
@@ -101,6 +120,8 @@ function StepAccount({
         confirmPassword: form.confirmPassword,
         acceptTerms,
         optInCotas,
+        optInPcd,
+        optInImt,
       });
       onRegistered(res);
     } catch (e) {
@@ -134,14 +155,27 @@ function StepAccount({
             <label className="field-label">CPF<span className="req">*</span></label>
             <div className="input-with-icon">
               <IconUser className="icon-prefix" />
-              <input className="input" placeholder="000.000.000-00" value={form.cpf} onChange={set("cpf")} />
+              <input className="input" placeholder="000.000.000-00" inputMode="numeric" value={form.cpf} onChange={(e) => setForm((f) => ({ ...f, cpf: maskCpf(e.target.value) }))} />
             </div>
             <span className="field-help">O CPF informado deve ser o mesmo do SisProuni.</span>
             {fe.cpf && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.cpf}</span>}
           </div>
           <div className="field col-6">
             <label className="field-label">Data de nascimento</label>
-            <input className="input" placeholder="dd/mm/aaaa" value={form.birthDate} onChange={set("birthDate")} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <select className="select" style={{ flex: "0 0 72px" }} aria-label="Dia" value={dob.d} onChange={(e) => updateDob({ d: e.target.value })}>
+                <option value="">Dia</option>
+                {DOB_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select className="select" style={{ flex: 1 }} aria-label="Mês" value={dob.m} onChange={(e) => updateDob({ m: e.target.value })}>
+                <option value="">Mês</option>
+                {MONTHS.map((mo, i) => <option key={mo} value={String(i + 1)}>{mo}</option>)}
+              </select>
+              <select className="select" style={{ flex: "0 0 88px" }} aria-label="Ano" value={dob.y} onChange={(e) => updateDob({ y: e.target.value })}>
+                <option value="">Ano</option>
+                {DOB_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
           </div>
           <div className="field col-12">
             <label className="field-label">Nome completo<span className="req">*</span></label>
@@ -154,7 +188,7 @@ function StepAccount({
           </div>
           <div className="field col-6">
             <label className="field-label">Celular (com DDD)<span className="req">*</span></label>
-            <input className="input" placeholder="(11) 99999-9999" value={form.phone} onChange={set("phone")} />
+            <input className="input" placeholder="(11) 99999-9999" inputMode="numeric" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: maskPhone(e.target.value) }))} />
             {fe.phone && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.phone}</span>}
           </div>
           <div className="field col-6">
@@ -193,6 +227,24 @@ function StepAccount({
               12.711/2012). Estou ciente de que deverei preencher e assinar o{" "}
               <a href="#" onClick={(e) => e.preventDefault()}>Formulário de Autodeclaração de Cotas</a> e
               anexá-lo junto aos demais documentos comprobatórios.
+            </span>
+          </label>
+
+          <label className="checkbox">
+            <input type="checkbox" checked={optInPcd} onChange={() => setOptInPcd((v) => !v)} />
+            <span className="box" />
+            <span>
+              Sou <strong>pessoa com deficiência (PCD)</strong>. Estou ciente de que deverei anexar laudo
+              médico com CID e a declaração específica junto aos documentos.
+            </span>
+          </label>
+
+          <label className="checkbox">
+            <input type="checkbox" checked={optInImt} onChange={() => setOptInImt((v) => !v)} />
+            <span className="box" />
+            <span>
+              Sou <strong>funcionário, professor ou dependente</strong> de funcionário/professor do
+              Instituto Mauá de Tecnologia (exige termo de aceite específico).
             </span>
           </label>
         </div>
@@ -505,7 +557,9 @@ function StepFamilia({ appId }: { appId: string | null }) {
                       <input
                         className="input mono"
                         style={{ width: 150, height: 28 }}
+                        inputMode="numeric"
                         defaultValue={m.cpf ?? ""}
+                        onChange={(e) => { e.target.value = maskCpf(e.target.value); }}
                         onBlur={(e) => update(m.id, { cpf: e.target.value })}
                       />
                     </label>
@@ -530,24 +584,48 @@ function StepFamilia({ appId }: { appId: string | null }) {
                   </div>
                   {(m.age ?? 0) >= 18 && (
                     <div style={{ marginTop: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span className="muted small">Situação de renda:</span>
-                        <select
-                          className="input"
-                          style={{ height: 32, padding: "2px 8px", fontSize: 12.5, maxWidth: 380 }}
-                          value={m.incomeSituation ?? ""}
-                          onChange={(e) => update(m.id, { incomeSituation: (e.target.value || undefined) as FamilyMemberInput["incomeSituation"] })}
-                        >
-                          <option value="">Selecione…</option>
-                          {INCOME_SITUATIONS.map((s) => (
-                            <option key={s.value} value={s.value}>{s.label}</option>
-                          ))}
-                        </select>
+                      <div className="muted small" style={{ marginBottom: 6 }}>
+                        Situação de renda <strong>(pode marcar mais de uma)</strong>:
                       </div>
-                      {m.incomeSituation && (
-                        <div className="muted small" style={{ marginTop: 4 }}>
-                          Documento esperado: {INCOME_SITUATIONS.find((s) => s.value === m.incomeSituation)?.hint}
-                        </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {INCOME_SITUATIONS.map((s) => {
+                          const on = (m.incomeSituations ?? []).includes(s.value);
+                          return (
+                            <button
+                              key={s.value}
+                              type="button"
+                              title={s.hint}
+                              onClick={() => {
+                                const cur = m.incomeSituations ?? [];
+                                const nextList = on ? cur.filter((x) => x !== s.value) : [...cur, s.value];
+                                update(m.id, { incomeSituations: nextList });
+                              }}
+                              style={{
+                                fontSize: 12,
+                                padding: "5px 10px",
+                                borderRadius: 16,
+                                border: "1px solid " + (on ? "var(--blue-600)" : "var(--ink-200)"),
+                                background: on ? "var(--blue-50)" : "#fff",
+                                color: on ? "var(--blue-700)" : "var(--ink-700)",
+                                fontWeight: on ? 600 : 500,
+                              }}
+                            >
+                              {on ? "✓ " : ""}{s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {(m.incomeSituations ?? []).includes("ASSALARIADO") && (
+                        <label className="checkbox" style={{ marginTop: 8 }}>
+                          <input type="checkbox" defaultChecked={m.receivesCommissionOvertime} onChange={(e) => update(m.id, { receivesCommissionOvertime: e.target.checked })} />
+                          <span className="box" /><span className="small">Recebe comissão ou hora extra (exige os 6 últimos holerites)</span>
+                        </label>
+                      )}
+                      {(m.incomeSituations ?? []).includes("EMPRESARIO") && (
+                        <label className="checkbox" style={{ marginTop: 6 }}>
+                          <input type="checkbox" defaultChecked={m.companyInactive} onChange={(e) => update(m.id, { companyInactive: e.target.checked })} />
+                          <span className="box" /><span className="small">A empresa está inativa (exige DCTF/DEFIS sem movimento)</span>
+                        </label>
                       )}
                     </div>
                   )}
@@ -585,75 +663,86 @@ function StepFamilia({ appId }: { appId: string | null }) {
   );
 }
 
-/** Rótulo da condição/escopo de um tipo de documento, para exibição. */
-function docScopeHint(scope: string, appliesTo: string | null): string | null {
-  if (appliesTo) return appliesTo;
-  if (scope === "EACH_MEMBER") return "Para cada integrante do grupo familiar";
-  if (scope === "EACH_ADULT") return "Para cada integrante maior de 18 anos";
-  return null;
-}
-
-function StepDocs() {
-  const docs = useQuery({ queryKey: ["doc-types"], queryFn: cyclesApi.documentTypes });
-  const categories: DocumentCategoryDto[] = docs.data?.categories ?? [];
-  const totalTypes = categories.reduce((s, c) => s + c.types.length, 0);
+function StepDocs({ appId }: { appId: string | null }) {
+  const docs = useQuery({
+    queryKey: ["required-docs", appId],
+    queryFn: () => applicationsApi.requiredDocuments(appId as string),
+    enabled: !!appId,
+  });
+  const data: RequiredDocumentsDto | undefined = docs.data;
 
   return (
     <>
       <h2 className="signup-title">Documentos comprobatórios</h2>
       <p className="signup-sub">
-        Esta é a <strong>relação completa</strong> de documentos do processo, na ordem oficial. Conforme a
-        situação de renda de cada integrante, a posse do imóvel e as rendas declaradas, o sistema mostra
-        exatamente quais se aplicam a você na etapa de envio.
+        Esta é a lista <strong>exata</strong> de documentos para o seu caso, montada a partir das respostas
+        da ficha. Itens marcados com <span className="mono">gov.br</span> exigem assinatura digital ou firma
+        em cartório.
       </p>
 
       {docs.isLoading ? (
-        <p className="muted" style={{ marginTop: 16 }}>Carregando a relação de documentos…</p>
-      ) : docs.isError ? (
-        <Banner tone="warn" title="Não foi possível carregar a relação de documentos">
+        <p className="muted" style={{ marginTop: 16 }}>Montando a sua lista de documentos…</p>
+      ) : docs.isError || !data ? (
+        <Banner tone="warn" title="Não foi possível montar a lista de documentos">
           Verifique sua conexão e tente novamente.
         </Banner>
       ) : (
         <>
-          <div className="docs-summary">
+          {data.notes.length > 0 && (
+            <Banner tone="info" title="Complete a ficha para personalizar a lista">
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {data.notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            </Banner>
+          )}
+
+          <div className="docs-summary" style={{ marginTop: 14 }}>
             <div className="docs-summary-item">
-              <div className="muted small">Categorias</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{categories.length}</div>
+              <div className="muted small">Documentos</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{data.totals.total}</div>
             </div>
             <div className="docs-summary-item">
-              <div className="muted small">Tipos de documento</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{totalTypes}</div>
+              <div className="muted small">Categorias</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{data.categories.length}</div>
             </div>
             <div className="docs-summary-item" style={{ flex: 1 }}>
               <div className="muted small" style={{ marginBottom: 4 }}>
-                A lista exata, por integrante e condição, é montada após o preenchimento da ficha.
+                A lista se ajusta conforme você altera a ficha (situação de renda, moradia, rendas e perfil).
               </div>
             </div>
           </div>
 
           <div className="docs-cat-list">
-            {categories.map((cat) => (
+            {data.categories.map((cat) => (
               <div className="docs-cat" key={cat.id}>
                 <div className="docs-cat-head" style={{ borderLeftColor: cat.colorVar ?? "var(--blue-600)" }}>
                   <div>
                     <div className="docs-cat-title">{cat.title}</div>
-                    <div className="muted small" style={{ marginTop: 2 }}>{cat.types.length} documento(s)</div>
+                    <div className="muted small" style={{ marginTop: 2 }}>{cat.items.length} documento(s)</div>
                   </div>
                 </div>
                 <div className="docs-cat-body">
-                  {cat.types.map((t) => {
-                    const hint = docScopeHint(t.scope, t.appliesTo);
-                    return (
-                      <div key={t.id} className="upload-row">
-                        <div className="upload-icon"><IconUpload size={16} /></div>
-                        <div>
-                          <div className="upload-title" style={{ fontSize: 13 }}>{t.name}</div>
-                          {hint && <div className="upload-meta">{hint}</div>}
+                  {cat.items.map((it) => (
+                    <div key={it.key} className="upload-row">
+                      <div className="upload-icon"><IconUpload size={16} /></div>
+                      <div>
+                        <div className="upload-title" style={{ fontSize: 13 }}>
+                          {it.name}
+                          {it.requiresSignature && (
+                            <span className="mono" style={{ color: "var(--amber-700)", marginLeft: 6, fontSize: 11 }}>gov.br</span>
+                          )}
                         </div>
-                        <div><Badge tone="neutral">A enviar</Badge></div>
+                        {(it.member || it.conditionLabel) && (
+                          <div className="upload-meta">
+                            {it.member ? `${it.member.relationship}${it.member.name ? " · " + it.member.name : ""}` : it.conditionLabel}
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
+                      <div><Badge tone="neutral">A enviar</Badge></div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -750,6 +839,7 @@ export default function InscricaoPage() {
   const [finalApp, setFinalApp] = useState<ApplicationDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [revisaoReady, setRevisaoReady] = useState(false);
 
   // Recupera o token de verificação de e-mail; sem ele, volta para /verificar.
   useEffect(() => {
@@ -806,9 +896,10 @@ export default function InscricaoPage() {
         setSaving(true);
         const id = await ensureAppId();
         if (id) await applicationsApi.course(id, { courseId });
-      } else if (step === "docs") {
+      } else if (step === "revisao") {
         setSaving(true);
         const id = await ensureAppId();
+        if (id) await socioApi.submit(id);
         const me = id ? await applicationsApi.me().catch(() => null) : null;
         setFinalApp(me);
         setDone(true);
@@ -848,7 +939,7 @@ export default function InscricaoPage() {
       </Banner>
     ) : undefined;
 
-  const nextLabel = step === "docs" ? "Concluir inscrição" : "Avançar";
+  const nextLabel = step === "revisao" ? "Concluir inscrição" : "Avançar";
 
   return (
     <SignupShell stepId={step} banner={banner}>
@@ -880,8 +971,12 @@ export default function InscricaoPage() {
           onCourse={setCourseId}
         />
       )}
+      {step === "estudante" && <StepEstudante appId={appId} />}
       {step === "familia" && <StepFamilia appId={appId} />}
-      {step === "docs" && <StepDocs />}
+      {step === "moradia" && <StepMoradia appId={appId} />}
+      {step === "renda" && <StepRendaDespesas appId={appId} />}
+      {step === "docs" && <StepDocs appId={appId} />}
+      {step === "revisao" && <StepRevisao appId={appId} onReadyChange={setRevisaoReady} />}
 
       {step !== "account" && err && (
         <div className="banner banner-danger" style={{ marginTop: 16, padding: "10px 12px" }}>
@@ -890,7 +985,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving} onNext={next} onBack={back} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (step === "revisao" && !revisaoReady)} onNext={next} onBack={back} />
       )}
     </SignupShell>
   );

@@ -115,7 +115,12 @@ export type DocCondition =
   | "HAS_VEHICLE" // quando a família declarou veículo
   | "OPT_IN_COTAS" // quando a inscrição opta por cotas
   | "OTHER_INCOME" // quando a família declara a renda extra correspondente
-  | "GUARDIANSHIP"; // quando os pais não compõem o grupo familiar
+  | "GUARDIANSHIP" // quando os pais não compõem o grupo familiar
+  | "IS_PCD" // candidato é pessoa com deficiência
+  | "IS_IMT_AFFILIATED" // candidato é funcionário/professor/dependente do IMT
+  | "HAS_UNDECLARED_ASSETS" // declarou bens/imóveis não declarados no IR
+  | "INCOME_COMMISSION_OVERTIME" // membro recebe comissão ou hora extra (→ 6 holerites)
+  | "COMPANY_INACTIVE"; // membro é sócio de empresa inativa (→ DCTF/DEFIS sem movimento)
 
 /* ===================== DTOs de resposta da API (M2) ===================== */
 
@@ -148,6 +153,9 @@ export interface ApplicationDto {
   id: string;
   protocol: string;
   status: ProcessStatus;
+  optsForQuota: boolean;
+  isPcd: boolean;
+  isImtAffiliated: boolean;
   cycle: { id: string; label: string };
   course: { id: string; name: string; campus: { code: string; name: string } } | null;
   enem: { edition: number | null; registration: string | null; score: string | null };
@@ -175,7 +183,9 @@ export interface FamilyMemberDto {
   relationship: string;
   maritalStatus: string | null;
   occupation: string | null;
-  incomeSituation: IncomeSituation | null;
+  incomeSituations: IncomeSituation[];
+  receivesCommissionOvertime: boolean; // sub-pergunta de assalariado → 6 holerites
+  companyInactive: boolean; // sub-pergunta de empresário → DCTF/DEFIS sem movimento
   grossIncome: string | null;
   isStudent: boolean;
   isFinancialResponsible: boolean;
@@ -192,6 +202,7 @@ export interface DocumentTypeDto {
   condition: DocCondition;
   conditionValues: string[];
   appliesTo: string | null;
+  requiresSignature: boolean; // exige assinatura gov.br / firma em cartório
 }
 
 export interface DocumentCategoryDto {
@@ -240,6 +251,8 @@ export interface SocioFormDto {
     receivesThirdPartyHelp: boolean; // recebe ajuda financeira de terceiros
     receivesSocialBenefit: boolean; // recebe benefício social (BPC, Bolsa Família…)
     parentsOutsideGroup: boolean; // pais do estudante não compõem o grupo (guarda/tutela)
+    shouldReceiveAlimony: boolean; // deveria receber pensão mas não recebe → declaração
+    hasUndeclaredAssets: boolean; // possui bens/imóveis não declarados no IR
     submittedAt: string | null;
   };
   incomes: { id: string; label: string; amount: string; sign: number }[];
@@ -259,6 +272,7 @@ export interface RequiredDocumentDto {
   required: boolean;
   scope: DocScope;
   conditionLabel: string | null; // texto amigável da condição (ex.: "Imóvel alugado")
+  requiresSignature: boolean; // exige assinatura gov.br / firma em cartório
   member: { id: string; name: string; relationship: string } | null; // a quem se refere
 }
 
