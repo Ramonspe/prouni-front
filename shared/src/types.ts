@@ -291,3 +291,16 @@ export interface RequiredDocumentsDto {
   notes: string[];
   categories: RequiredDocumentsCategoryDto[];
 }
+
+/** Estado de um documento no banco (espelha o enum DocumentStatus do Prisma). */
+export type DocumentStatusDb = "A_ENVIAR" | "ENVIADO" | "APROVADO" | "REPROVADO";
+
+/** Documento já enviado (slot tipo × integrante) — usado para casar com a lista resolvida. */
+export interface UploadedDocumentDto {
+  documentTypeId: string;
+  familyMemberId: string | null;
+  status: DocumentStatusDb;
+  fileName: string | null;
+  versionNo: number | null;
+  reviewComment?: string | null;
+}

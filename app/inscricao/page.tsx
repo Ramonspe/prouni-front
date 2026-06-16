@@ -19,7 +19,7 @@ import {
 } from "@/components/icons";
 import { SignupFooter, SignupShell } from "@/components/signup-shell";
 import { StepEstudante, StepMoradia, StepRendaDespesas, StepRevisao } from "@/components/inscricao-steps";
-import { ApiError, applicationsApi, authApi, coursesApi, familyApi, socioApi, type AuthResponse } from "@/lib/api";
+import { ApiError, applicationsApi, authApi, coursesApi, documentsApi, familyApi, socioApi, type AuthResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { maskCpf, maskPhone } from "@/lib/format";
 import {
@@ -690,21 +690,49 @@ function StepFamilia({ appId, onValidChange }: { appId: string | null; onValidCh
 }
 
 function StepDocs({ appId }: { appId: string | null }) {
+  const qc = useQueryClient();
   const docs = useQuery({
     queryKey: ["required-docs", appId],
     queryFn: () => applicationsApi.requiredDocuments(appId as string),
     enabled: !!appId,
   });
+  const uploaded = useQuery({
+    queryKey: ["uploaded-docs", appId],
+    queryFn: () => documentsApi.list(appId as string),
+    enabled: !!appId,
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [upErr, setUpErr] = useState("");
   const data: RequiredDocumentsDto | undefined = docs.data;
+  const upMap = new Map((uploaded.data ?? []).map((u) => [`${u.documentTypeId}:${u.familyMemberId ?? "app"}`, u]));
+
+  const onPick = async (key: string, typeId: string, memberId: string | null, file?: File) => {
+    if (!file || !appId) return;
+    setUpErr("");
+    setBusy(key);
+    try {
+      await documentsApi.upload(appId, typeId, memberId, file);
+      await qc.invalidateQueries({ queryKey: ["uploaded-docs", appId] });
+    } catch (e) {
+      setUpErr(e instanceof ApiError ? e.message : "Falha no envio do arquivo.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <>
       <h2 className="signup-title">Documentos comprobatórios</h2>
       <p className="signup-sub">
         Esta é a lista <strong>exata</strong> de documentos para o seu caso, montada a partir das respostas
-        da ficha. Itens marcados com <span className="mono">gov.br</span> exigem assinatura digital ou firma
-        em cartório.
+        da ficha. Envie cada arquivo (PDF, JPG ou PNG, até 10 MB). Itens com{" "}
+        <span className="mono">gov.br</span> exigem assinatura digital ou firma em cartório.
       </p>
+      {upErr && (
+        <div className="banner banner-danger" style={{ marginTop: 12, padding: "10px 12px" }}>
+          <div className="banner-body" style={{ color: "var(--red-700)" }}>{upErr}</div>
+        </div>
+      )}
 
       {docs.isLoading ? (
         <p className="muted" style={{ marginTop: 16 }}>Montando a sua lista de documentos…</p>
@@ -730,8 +758,8 @@ function StepDocs({ appId }: { appId: string | null }) {
               <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{data.totals.total}</div>
             </div>
             <div className="docs-summary-item">
-              <div className="muted small">Categorias</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{data.categories.length}</div>
+              <div className="muted small">Enviados</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)" }}>{uploaded.data?.length ?? 0}</div>
             </div>
             <div className="docs-summary-item" style={{ flex: 1 }}>
               <div className="muted small" style={{ marginBottom: 4 }}>
@@ -750,25 +778,44 @@ function StepDocs({ appId }: { appId: string | null }) {
                   </div>
                 </div>
                 <div className="docs-cat-body">
-                  {cat.items.map((it) => (
-                    <div key={it.key} className="upload-row">
-                      <div className="upload-icon"><IconUpload size={16} /></div>
-                      <div>
-                        <div className="upload-title" style={{ fontSize: 13 }}>
-                          {it.name}
-                          {it.requiresSignature && (
-                            <span className="mono" style={{ color: "var(--amber-700)", marginLeft: 6, fontSize: 11 }}>gov.br</span>
-                          )}
-                        </div>
-                        {(it.member || it.conditionLabel) && (
-                          <div className="upload-meta">
-                            {it.member ? `${it.member.relationship}${it.member.name ? " · " + it.member.name : ""}` : it.conditionLabel}
+                  {cat.items.map((it) => {
+                    const up = upMap.get(it.key);
+                    const sent = !!up && up.status !== "A_ENVIAR";
+                    return (
+                      <div key={it.key} className="upload-row">
+                        <div className="upload-icon"><IconUpload size={16} /></div>
+                        <div style={{ flex: 1 }}>
+                          <div className="upload-title" style={{ fontSize: 13 }}>
+                            {it.name}
+                            {it.requiresSignature && (
+                              <span className="mono" style={{ color: "var(--amber-700)", marginLeft: 6, fontSize: 11 }}>gov.br</span>
+                            )}
                           </div>
-                        )}
+                          {(it.member || it.conditionLabel) && (
+                            <div className="upload-meta">
+                              {it.member ? `${it.member.relationship}${it.member.name ? " · " + it.member.name : ""}` : it.conditionLabel}
+                            </div>
+                          )}
+                          {sent && <div className="upload-meta" style={{ color: "var(--green-700)" }}>Enviado: {up!.fileName}</div>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Badge tone={up?.status === "APROVADO" ? "success" : up?.status === "REPROVADO" ? "danger" : sent ? "info" : "neutral"}>
+                            {up?.status === "APROVADO" ? "Aprovado" : up?.status === "REPROVADO" ? "Reenviar" : sent ? "Enviado" : "A enviar"}
+                          </Badge>
+                          <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer" }}>
+                            {busy === it.key ? "Enviando…" : sent ? "Trocar" : "Enviar"}
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                              style={{ display: "none" }}
+                              disabled={busy === it.key}
+                              onChange={(e) => onPick(it.key, it.typeId, it.member?.id ?? null, e.target.files?.[0])}
+                            />
+                          </label>
+                        </div>
                       </div>
-                      <div><Badge tone="neutral">A enviar</Badge></div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}

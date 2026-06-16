@@ -9,6 +9,7 @@ import type {
   RequiredDocumentsDto,
   SocioFormDto,
   SocioFormInput,
+  UploadedDocumentDto,
 } from "@prouni/shared";
 
 // Cliente HTTP do portal. Access token em MEMÓRIA (nunca localStorage);
@@ -85,16 +86,17 @@ interface FetchOpts {
 
 export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   const { method = "GET", body, headers = {}, auth = true, retry = true } = opts;
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     credentials: "include",
     headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
       ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
   if (res.status === 401 && retry && auth) {
@@ -182,6 +184,18 @@ export const familyApi = {
   update: (memberId: string, body: Partial<FamilyMemberInput>) =>
     apiFetch<FamilyMemberDto>(`/family/${memberId}`, { method: "PATCH", body }),
   remove: (memberId: string) => apiFetch<void>(`/family/${memberId}`, { method: "DELETE" }),
+};
+
+/** Documentos comprobatórios — status e envio de arquivo (multipart). */
+export const documentsApi = {
+  list: (appId: string) => apiFetch<UploadedDocumentDto[]>(`/applications/${appId}/documents`),
+  upload: (appId: string, typeId: string, memberId: string | null, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("typeId", typeId);
+    if (memberId) fd.append("memberId", memberId);
+    return apiFetch<UploadedDocumentDto>(`/applications/${appId}/documents`, { method: "POST", body: fd });
+  },
 };
 
 /** Ficha socioeconômica (autosave por seção + envio). */
