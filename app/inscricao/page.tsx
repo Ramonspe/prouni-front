@@ -456,7 +456,7 @@ function StepCurso({
   );
 }
 
-function StepFamilia({ appId }: { appId: string | null }) {
+function StepFamilia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const qc = useQueryClient();
   const members = useQuery({
     queryKey: ["family", appId],
@@ -485,6 +485,8 @@ function StepFamilia({ appId }: { appId: string | null }) {
   };
 
   const adults = list.filter((m) => (m.age ?? 0) >= 18).length;
+  const adultsWithIncome = list.filter((m) => (m.age ?? 0) >= 18).every((m) => (m.incomeSituations ?? []).length > 0);
+  useEffect(() => { onValidChange(list.length > 0 && adultsWithIncome); }, [list.length, adultsWithIncome]); // eslint-disable-line react-hooks/exhaustive-deps
   const totalIncome = list.reduce((s, m) => s + (m.grossIncome ? Number(m.grossIncome) : 0), 0);
   const perCapita = list.length ? totalIncome / list.length : 0;
   const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -580,6 +582,30 @@ function StepFamilia({ appId }: { appId: string | null }) {
                         defaultValue={m.grossIncome ?? ""}
                         onBlur={(e) => update(m.id, { grossIncome: toMoney(e.target.value) })}
                       />
+                    </label>
+                    <label className="muted small">
+                      Estado civil{" "}
+                      <select
+                        className="input"
+                        style={{ width: 150, height: 28, fontSize: 12.5 }}
+                        defaultValue={m.maritalStatus ?? ""}
+                        onChange={(e) => update(m.id, { maritalStatus: e.target.value })}
+                      >
+                        <option value="">—</option>
+                        <option>Solteiro(a)</option>
+                        <option>Casado(a)</option>
+                        <option>Divorciado(a)</option>
+                        <option>Viúvo(a)</option>
+                        <option>União estável</option>
+                      </select>
+                    </label>
+                    <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <input
+                        type="checkbox"
+                        defaultChecked={m.isFinancialResponsible}
+                        onChange={(e) => update(m.id, { isFinancialResponsible: e.target.checked })}
+                      />
+                      Responsável financeiro
                     </label>
                   </div>
                   {(m.age ?? 0) >= 18 && (
@@ -839,7 +865,7 @@ export default function InscricaoPage() {
   const [finalApp, setFinalApp] = useState<ApplicationDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const [revisaoReady, setRevisaoReady] = useState(false);
+  const [valid, setValid] = useState<Record<string, boolean>>({});
 
   // Recupera o token de verificação de e-mail; sem ele, volta para /verificar.
   useEffect(() => {
@@ -972,11 +998,11 @@ export default function InscricaoPage() {
         />
       )}
       {step === "estudante" && <StepEstudante appId={appId} />}
-      {step === "familia" && <StepFamilia appId={appId} />}
-      {step === "moradia" && <StepMoradia appId={appId} />}
+      {step === "familia" && <StepFamilia appId={appId} onValidChange={(v) => setValid((s) => ({ ...s, familia: v }))} />}
+      {step === "moradia" && <StepMoradia appId={appId} onValidChange={(v) => setValid((s) => ({ ...s, moradia: v }))} />}
       {step === "renda" && <StepRendaDespesas appId={appId} />}
       {step === "docs" && <StepDocs appId={appId} />}
-      {step === "revisao" && <StepRevisao appId={appId} onReadyChange={setRevisaoReady} />}
+      {step === "revisao" && <StepRevisao appId={appId} onReadyChange={(v) => setValid((s) => ({ ...s, revisao: v }))} />}
 
       {step !== "account" && err && (
         <div className="banner banner-danger" style={{ marginTop: 16, padding: "10px 12px" }}>
@@ -985,7 +1011,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (step === "revisao" && !revisaoReady)} onNext={next} onBack={back} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
       )}
     </SignupShell>
   );

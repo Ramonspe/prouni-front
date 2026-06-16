@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { socioApi } from "@/lib/api";
 import type { SocioFormDto, SocioFormInput } from "@prouni/shared";
-import { IconCar, IconHouse, IconInfo, IconShield, IconWallet } from "@/components/icons";
 import { maskCep } from "@/lib/format";
+import { IconCar, IconHouse, IconInfo, IconShield, IconWallet } from "@/components/icons";
 
 type Form = SocioFormDto["form"];
+type Income = SocioFormDto["incomes"][number];
 
 /** Normaliza um valor digitado para a string monetária canônica "1234.56". */
 function toMoney(raw: string): string | undefined {
@@ -24,6 +25,7 @@ function useSocioForm(appId: string | null) {
   const [form, setForm] = useState<Partial<Form>>({});
   const [vehicles, setVehicles] = useState<SocioFormDto["vehicles"]>([]);
   const [expenses, setExpenses] = useState<SocioFormDto["expenses"]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
   const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
@@ -31,6 +33,7 @@ function useSocioForm(appId: string | null) {
       setForm(q.data.form);
       setVehicles(q.data.vehicles);
       setExpenses(q.data.expenses);
+      setIncomes(q.data.incomes);
       setSeeded(true);
     }
   }, [q.data, seeded]);
@@ -39,7 +42,7 @@ function useSocioForm(appId: string | null) {
     if (appId) void socioApi.patch(appId, patch);
   };
 
-  return { loading: q.isLoading || !seeded, form, setForm, vehicles, setVehicles, expenses, setExpenses, save };
+  return { loading: q.isLoading || !seeded, form, setForm, vehicles, setVehicles, expenses, setExpenses, incomes, setIncomes, save };
 }
 
 /* ============ Passo: Dados do estudante ============ */
@@ -99,10 +102,13 @@ const TENURES: [string, string, string][] = [
   ["IRREGULAR", "Irregular", "Declaração do morador"],
 ];
 
-export function StepMoradia({ appId }: { appId: string | null }) {
+export function StepMoradia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
   const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
 
   const saveVehicle = (next: Partial<typeof veh>) => {
     const merged = { ...veh, ...next };
@@ -148,7 +154,7 @@ export function StepMoradia({ appId }: { appId: string | null }) {
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>
-        Posse do imóvel{" "}
+        Posse do imóvel<span className="req">*</span>{" "}
         <span className="muted small" style={{ fontWeight: 400 }}>(define os documentos do imóvel)</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
@@ -216,19 +222,19 @@ const EXPENSE_LABELS = [
   "Cartão de crédito", "Alimentação", "Transporte", "Despesas médicas / medicação", "Outras despesas",
 ];
 
-interface YesNoQ { key: keyof Form; label: string }
+interface YesNoQ { key: keyof Form; label: string; income?: { label: string; sign: number } }
 const INCOME_QUESTIONS: YesNoQ[] = [
-  { key: "receivesAlimony", label: "Algum membro recebe pensão alimentícia?" },
-  { key: "paysAlimony", label: "Algum membro paga pensão alimentícia?" },
+  { key: "receivesAlimony", label: "Algum membro recebe pensão alimentícia?", income: { label: "Pensão alimentícia recebida", sign: 1 } },
+  { key: "paysAlimony", label: "Algum membro paga pensão alimentícia?", income: { label: "Pensão alimentícia paga", sign: -1 } },
   { key: "shouldReceiveAlimony", label: "Deveria receber pensão alimentícia, mas não recebe?" },
-  { key: "receivesThirdPartyHelp", label: "Recebe ajuda financeira de terceiros?" },
-  { key: "receivesSocialBenefit", label: "Recebe benefício social do governo (BPC, Bolsa Família…)?" },
-  { key: "receivesRentalIncome", label: "Recebe renda de aluguel (locação)?" },
+  { key: "receivesThirdPartyHelp", label: "Recebe ajuda financeira de terceiros?", income: { label: "Ajuda de terceiros", sign: 1 } },
+  { key: "receivesSocialBenefit", label: "Recebe benefício social do governo (BPC, Bolsa Família…)?", income: { label: "Benefício social", sign: 1 } },
+  { key: "receivesRentalIncome", label: "Recebe renda de aluguel (locação)?", income: { label: "Aluguel recebido", sign: 1 } },
   { key: "parentsOutsideGroup", label: "Os pais do estudante NÃO compõem o grupo familiar (guarda/tutela)?" },
 ];
 
 export function StepRendaDespesas({ appId }: { appId: string | null }) {
-  const { loading, form, setForm, expenses, setExpenses, save } = useSocioForm(appId);
+  const { loading, form, setForm, expenses, setExpenses, incomes, setIncomes, save } = useSocioForm(appId);
   const setFlag = (k: keyof Form, v: boolean) => { setForm((p) => ({ ...p, [k]: v })); save({ [k]: v } as SocioFormInput); };
 
   const amountOf = (label: string) => expenses.find((e) => e.label === label)?.amount ?? "";
@@ -240,23 +246,41 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
     save({ expenses: next.map((e) => ({ label: e.label, amount: e.amount })) });
   };
 
+  const incomeOf = (label: string) => incomes.find((i) => i.label === label)?.amount ?? "";
+  const saveIncome = (label: string, sign: number, raw: string) => {
+    const amount = toMoney(raw);
+    const rest = incomes.filter((i) => i.label !== label);
+    const next = amount ? [...rest, { id: "tmp", label, amount, sign }] : rest;
+    setIncomes(next);
+    save({ incomes: next.map((i) => ({ label: i.label, amount: i.amount, sign: i.sign as 1 | -1 })) });
+  };
+
   if (loading) return <p className="muted">Carregando…</p>;
   return (
     <>
       <h2 className="signup-title">Renda e despesas</h2>
       <p className="signup-sub">
-        As respostas abaixo definem quais comprovantes de renda serão solicitados na etapa de documentos.
+        As respostas abaixo definem quais comprovantes de renda serão solicitados, e os valores entram no
+        cálculo da renda familiar.
       </p>
 
       <h3 className="section-title" style={{ marginTop: 18 }}><IconWallet size={15} /> Fontes de renda do grupo</h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {INCOME_QUESTIONS.map((qst) => (
-          <div key={qst.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--ink-100)", paddingBottom: 8 }}>
-            <span style={{ fontSize: 13.5, color: "var(--ink-800)" }}>{qst.label}</span>
-            <div style={{ display: "flex", gap: 16 }}>
-              <label className="radio"><input type="radio" name={qst.key} checked={form[qst.key] === true} onChange={() => setFlag(qst.key, true)} /><span className="dot" /> Sim</label>
-              <label className="radio"><input type="radio" name={qst.key} checked={form[qst.key] === false} onChange={() => setFlag(qst.key, false)} /><span className="dot" /> Não</label>
+          <div key={qst.key} style={{ borderBottom: "1px solid var(--ink-100)", paddingBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13.5, color: "var(--ink-800)" }}>{qst.label}</span>
+              <div style={{ display: "flex", gap: 16 }}>
+                <label className="radio"><input type="radio" name={qst.key} checked={form[qst.key] === true} onChange={() => setFlag(qst.key, true)} /><span className="dot" /> Sim</label>
+                <label className="radio"><input type="radio" name={qst.key} checked={form[qst.key] === false} onChange={() => setFlag(qst.key, false)} /><span className="dot" /> Não</label>
+              </div>
             </div>
+            {qst.income && form[qst.key] === true && (
+              <div className="input-with-icon" style={{ marginTop: 8, maxWidth: 220 }}>
+                <span className="icon-prefix" style={{ left: 12, color: "var(--ink-500)", fontSize: 12, pointerEvents: "none" }}>R$</span>
+                <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={incomeOf(qst.income.label)} onBlur={(e) => saveIncome(qst.income!.label, qst.income!.sign, e.target.value)} />
+              </div>
+            )}
           </div>
         ))}
       </div>
