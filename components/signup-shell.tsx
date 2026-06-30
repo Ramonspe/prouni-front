@@ -94,6 +94,7 @@ export function SignupFooter({
   disabled = false,
   onNext,
   onBack,
+  onExit,
 }: {
   savedAt?: string;
   canBack?: boolean;
@@ -102,6 +103,7 @@ export function SignupFooter({
   disabled?: boolean;
   onNext?: () => void;
   onBack?: () => void;
+  onExit?: () => void;
 }) {
   return (
     <div className="signup-footer">
@@ -110,7 +112,7 @@ export function SignupFooter({
         Salvo automaticamente {savedAt}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-ghost">Salvar e sair</button>
+        <button className="btn btn-ghost" onClick={onExit}>Salvar e sair</button>
         {canBack && (
           <button className="btn btn-ghost" onClick={onBack}>
             <IconChevL size={13} /> Anterior

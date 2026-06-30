@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/auth-context";
 import { maskCpf, maskPhone } from "@/lib/format";
 import {
   INCOME_SITUATIONS,
+  isValidCpf,
   registerSchema,
   type ApplicationDto,
   type FamilyMemberInput,
@@ -468,6 +469,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
 
   const [draft, setDraft] = useState({ fullName: "", relationship: "" });
   const [adding, setAdding] = useState(false);
+  const [cpfErrors, setCpfErrors] = useState<Record<string, string>>({});
 
   const update = (id: string, patch: Partial<FamilyMemberInput>) =>
     familyApi.update(id, patch).then(refetch).catch(() => {});
@@ -554,16 +556,25 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                         onBlur={(e) => update(m.id, { age: e.target.value ? Number(e.target.value) : undefined })}
                       />
                     </label>
-                    <label className="muted small">
+                    <label className="muted small" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       CPF{" "}
                       <input
-                        className="input mono"
-                        style={{ width: 150, height: 28 }}
+                        className={`input mono${cpfErrors[m.id] ? " input-error" : ""}`}
+                        style={{ width: 150, height: 28, borderColor: cpfErrors[m.id] ? "var(--red-600)" : undefined }}
                         inputMode="numeric"
                         defaultValue={m.cpf ?? ""}
                         onChange={(e) => { e.target.value = maskCpf(e.target.value); }}
-                        onBlur={(e) => update(m.id, { cpf: e.target.value })}
+                        onBlur={(e) => {
+                          const val = e.target.value;
+                          if (val && !isValidCpf(val)) {
+                            setCpfErrors((p) => ({ ...p, [m.id]: "CPF inválido" }));
+                          } else {
+                            setCpfErrors((p) => { const n = { ...p }; delete n[m.id]; return n; });
+                            update(m.id, { cpf: val });
+                          }
+                        }}
                       />
+                      {cpfErrors[m.id] && <span style={{ color: "var(--red-700)", fontSize: 11 }}>{cpfErrors[m.id]}</span>}
                     </label>
                     <label className="muted small">
                       Profissão{" "}
@@ -918,7 +929,7 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
 
 export default function InscricaoPage() {
   const router = useRouter();
-  const { setSession } = useAuth();
+  const { setSession, logout } = useAuth();
   const [reg, setReg] = useState<{ registrationToken: string; email: string } | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [done, setDone] = useState(false);
@@ -1011,6 +1022,16 @@ export default function InscricaoPage() {
     setStepIdx((i) => Math.max(1, i - 1));
   };
 
+  // Salva o progresso (já é autosave) e redireciona para o login.
+  const saveAndExit = async () => {
+    try {
+      await logout();
+    } catch {
+      /* ignora falha de logout — redireciona de qualquer forma */
+    }
+    router.push("/login");
+  };
+
   const banner =
     step === "docs" ? (
       <Banner tone="info" title="Como organizar os arquivos">
@@ -1076,7 +1097,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} onExit={saveAndExit} />
       )}
     </SignupShell>
   );

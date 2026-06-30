@@ -51,6 +51,7 @@ const adminNav: NavItem[] = [
   { id: "queue", label: "Candidatos", icon: IconUsers, href: "/admin/candidatos", badge: "47" },
   { id: "analysis", label: "Análise", icon: IconLayers, href: "/admin/analise/PRN-2026-0418", match: "/admin/analise" },
   { id: "indicators", label: "Indicadores", icon: IconChart, href: "/admin/indicadores" },
+  { id: "doc-templates", label: "Modelos de documentos", icon: IconFile, href: "/admin/operacao/documentos", match: "/admin/operacao/documentos" },
   { group: "Sistema" },
   { id: "audit", label: "Auditoria", icon: IconShield, href: "#" },
   { id: "settings", label: "Configurações", icon: IconSettings, href: "#" },

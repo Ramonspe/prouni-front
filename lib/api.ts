@@ -1,4 +1,21 @@
 import type {
+  AdminAnalystDto,
+  AdminApplicationDetail,
+  AdminApplicationRow,
+  AdminDecisionInput,
+  AdminDocumentReviewInput,
+  AdminIncomeInput,
+  AdminStatsDto,
+  AuditLogDto,
+  PreselectionEntryDto,
+  PreselectionImportResult,
+  PreselectionInput,
+  UserDto,
+  UserCreateInput,
+  UserUpdateInput,
+  MaintenanceSummaryDto,
+  MaintenanceResetResult,
+  DocMatrixSyncResult,
   ApplicationDto,
   ApplicationEventDto,
   CampusDto,
@@ -74,6 +91,35 @@ function refreshAccess(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Diagnóstico best-effort: envia o detalhe técnico de uma falha de requisição para a
+ * auditoria (Admin → Auditoria → Logs), para a infraestrutura rastrear. Usa fetch cru
+ * (não passa por apiFetch — evita recursão) e nunca lança nem bloqueia o fluxo.
+ */
+function reportClientError(payload: {
+  status: number;
+  url: string;
+  method?: string;
+  message?: string;
+  responseSnippet?: string;
+  page?: string;
+  requestId?: string;
+  cfId?: string;
+  cfPop?: string;
+  traceId?: string;
+}): void {
+  try {
+    void fetch(`${API_BASE}/diagnostics/client-error`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* nunca interfere no fluxo do usuário */
+  }
+}
+
 interface FetchOpts {
   method?: string;
   body?: unknown;
@@ -88,27 +134,92 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
   const { method = "GET", body, headers = {}, auth = true, retry = true } = opts;
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    credentials: "include",
-    headers: {
-      ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
-      ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...headers,
-    },
-    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
-  });
+  const page = typeof window !== "undefined" ? window.location.pathname : undefined;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      credentials: "include",
+      headers: {
+        ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
+        ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...headers,
+      },
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+    });
+  } catch (networkErr) {
+    // Sem resposta alguma (DNS, conexão recusada, CORS, offline). Registra e converte
+    // em ApiError com status 0, para o usuário ver um motivo claro em vez de um crash.
+    reportClientError({
+      status: 0,
+      url: path,
+      method,
+      message: networkErr instanceof Error ? networkErr.message : "Falha de rede",
+      page,
+    });
+    throw new ApiError(0, "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.");
+  }
 
   if (res.status === 401 && retry && auth) {
     const ok = await refreshAccess();
     if (ok) return apiFetch<T>(path, { ...opts, retry: false });
   }
 
+  // Resposta pode não ser JSON (ex.: página de erro HTML do WAF/CloudFront, 5xx do
+  // gateway). Nunca deixar o JSON.parse estourar — sempre converter em ApiError com
+  // o status real, para o usuário/log verem o motivo em vez de um erro genérico.
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+  const asObj = data as { message?: string; issues?: { path: string; message: string }[] } | null;
+
+  // Cabeçalhos de rastreio do CDN/WAF/gateway — ouro para a infra localizar a requisição.
+  const h = (n: string) => res.headers.get(n) ?? undefined;
+  const diag = {
+    requestId: h("x-request-id") ?? h("x-amzn-requestid"),
+    cfId: h("x-amz-cf-id"),
+    cfPop: h("x-amz-cf-pop"),
+    traceId: h("x-amzn-trace-id"),
+  };
+
   if (!res.ok) {
-    const message = (data && (data.message as string)) || "Não foi possível completar a operação.";
-    throw new ApiError(res.status, message, data?.issues);
+    const message = asObj?.message || `Falha na requisição (HTTP ${res.status}).`;
+    // Reporta falhas inesperadas. Ignora o 401 (desafio de refresh, rotineiro) e a
+    // validação de campo 400 com issues (erro normal, corrigido pelo usuário no form).
+    const isFieldValidation =
+      res.status === 400 && Array.isArray(asObj?.issues) && (asObj!.issues!.length ?? 0) > 0;
+    if (res.status !== 401 && !isFieldValidation) {
+      reportClientError({
+        status: res.status,
+        url: path,
+        method,
+        message,
+        responseSnippet: text ? text.slice(0, 2000) : undefined,
+        page,
+        ...diag,
+      });
+    }
+    throw new ApiError(res.status, message, asObj?.issues);
+  }
+  if (data === null && text) {
+    // 2xx mas corpo não-JSON (resposta inesperada de um proxy/CDN).
+    reportClientError({
+      status: res.status,
+      url: path,
+      method,
+      message: "Resposta 2xx não-JSON (proxy/CDN inesperado).",
+      responseSnippet: text.slice(0, 2000),
+      page,
+      ...diag,
+    });
+    throw new ApiError(res.status, "Resposta inesperada do servidor.");
   }
   return data as T;
 }
@@ -124,6 +235,10 @@ export const authApi = {
     apiFetch<{ message: string }>("/account/start", { method: "POST", body: { email }, auth: false, retry: false }),
   resend: (email: string) =>
     apiFetch<{ message: string }>("/account/resend-token", { method: "POST", body: { email }, auth: false, retry: false }),
+  forgotPassword: (cpf: string) =>
+    apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", body: { cpf }, auth: false, retry: false }),
+  resetPassword: (cpf: string, code: string, password: string) =>
+    apiFetch<{ message: string }>("/auth/reset-password", { method: "POST", body: { cpf, code, password }, auth: false, retry: false }),
   verifyToken: (email: string, code: string) =>
     apiFetch<{ registrationToken: string; email: string }>("/account/verify-token", {
       method: "POST",
@@ -174,6 +289,9 @@ export const applicationsApi = {
     apiFetch<ApplicationDto>(`/applications/${id}/enem`, { method: "PATCH", body }),
   course: (id: string, body: { courseId: string }) =>
     apiFetch<ApplicationDto>(`/applications/${id}/course`, { method: "PATCH", body }),
+  /** Finaliza a inscrição (marca ENVIADA e trava novos envios). */
+  finalize: (id: string) =>
+    apiFetch<ApplicationDto>(`/applications/${id}/finalize`, { method: "POST" }),
 };
 
 /** Grupo familiar da inscrição. */
@@ -195,6 +313,95 @@ export const documentsApi = {
     fd.append("typeId", typeId);
     if (memberId) fd.append("memberId", memberId);
     return apiFetch<UploadedDocumentDto>(`/applications/${appId}/documents`, { method: "POST", body: fd });
+  },
+};
+
+/** Área administrativa (equipe). Somente leitura na Fase 1. */
+export const adminApi = {
+  applications: (params: { q?: string; status?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.status && params.status !== "all") qs.set("status", params.status);
+    const s = qs.toString();
+    return apiFetch<AdminApplicationRow[]>(`/admin/applications${s ? `?${s}` : ""}`);
+  },
+  application: (id: string) => apiFetch<AdminApplicationDetail>(`/admin/applications/${id}`),
+  analysts: () => apiFetch<AdminAnalystDto[]>("/admin/analysts"),
+  stats: () => apiFetch<AdminStatsDto>("/admin/stats"),
+  /** Trilha de auditoria (Auditoria → Logs). Restrito a ADMIN no servidor. */
+  logs: (params: { action?: string; q?: string; from?: string; to?: string; take?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.action && params.action !== "all") qs.set("action", params.action);
+    if (params.q) qs.set("q", params.q);
+    if (params.from) qs.set("from", params.from);
+    if (params.to) qs.set("to", params.to);
+    if (params.take) qs.set("take", String(params.take));
+    const s = qs.toString();
+    return apiFetch<AuditLogDto[]>(`/admin/logs${s ? `?${s}` : ""}`);
+  },
+  reviewDocument: (documentId: string, body: AdminDocumentReviewInput) =>
+    apiFetch<AdminApplicationDetail>(`/admin/documents/${documentId}/review`, { method: "POST", body }),
+  assignAnalyst: (appId: string, analystId: string | null) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/analyst`, { method: "PATCH", body: { analystId } }),
+  decide: (appId: string, body: AdminDecisionInput) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/decision`, { method: "POST", body }),
+  setIncome: (appId: string, body: AdminIncomeInput) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/income`, { method: "PATCH", body }),
+  /** Baixa o arquivo do documento (com Bearer) e devolve um object URL + mime para exibir inline. */
+  documentFile: async (documentId: string): Promise<{ url: string; mime: string }> => {
+    const res = await fetch(`${API_BASE}/admin/documents/${documentId}/file`, {
+      credentials: "include",
+      headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+    });
+    if (!res.ok) throw new ApiError(res.status, "Não foi possível abrir o arquivo.");
+    const blob = await res.blob();
+    return { url: URL.createObjectURL(blob), mime: blob.type };
+  },
+};
+
+/** Pré-selecionados (Configurações): CRUD + importação CSV/Excel. */
+export const preselectionApi = {
+  list: (q?: string) =>
+    apiFetch<PreselectionEntryDto[]>(`/admin/preselection${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  create: (body: PreselectionInput) =>
+    apiFetch<PreselectionEntryDto>("/admin/preselection", { method: "POST", body }),
+  update: (id: string, body: PreselectionInput) =>
+    apiFetch<PreselectionEntryDto>(`/admin/preselection/${id}`, { method: "PATCH", body }),
+  remove: (id: string) =>
+    apiFetch<{ ok: true }>(`/admin/preselection/${id}`, { method: "DELETE" }),
+  import: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiFetch<PreselectionImportResult>("/admin/preselection/import", { method: "POST", body: fd });
+  },
+};
+
+/** Usuários internos (Configurações → Usuários): CRUD restrito a ADMIN. */
+export const usersApi = {
+  list: (q?: string) =>
+    apiFetch<UserDto[]>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  create: (body: UserCreateInput) =>
+    apiFetch<UserDto>("/admin/users", { method: "POST", body }),
+  update: (id: string, body: UserUpdateInput) =>
+    apiFetch<UserDto>(`/admin/users/${id}`, { method: "PATCH", body }),
+};
+
+/** Manutenção da base (Configurações → Manutenção): preview + limpeza. Restrito a ADMIN. */
+export const maintenanceApi = {
+  summary: () => apiFetch<MaintenanceSummaryDto>("/admin/maintenance/summary"),
+  reset: (confirmation: string) =>
+    apiFetch<MaintenanceResetResult>("/admin/maintenance/reset", { method: "POST", body: { confirmation } }),
+  syncDocMatrix: () =>
+    apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", { method: "POST" }),
+};
+
+/** Modelos de documentos (Operação → Modelos de documentos): ADMIN e ANALYST. */
+export const docTemplatesApi = {
+  /** Envia um novo arquivo de modelo para um tipo de documento. Retorna a URL pública do modelo. */
+  uploadTemplate: (typeId: string, file: File): Promise<{ templateUrl: string }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiFetch<{ templateUrl: string }>(`/admin/document-types/${typeId}/template`, { method: "POST", body: fd });
   },
 };
 

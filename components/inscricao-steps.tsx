@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { applicationsApi, socioApi } from "@/lib/api";
 import type { SocioFormDto, SocioFormInput } from "@prouni/shared";
-import { maskCep } from "@/lib/format";
+import { maskCep, maskMoney, maskNis, maskPhone } from "@/lib/format";
 import { IconCar, IconHouse, IconInfo, IconShield, IconWallet } from "@/components/icons";
 
 type Form = SocioFormDto["form"];
@@ -17,6 +17,7 @@ function toMoney(raw: string): string | undefined {
 
 /** Carrega a ficha uma vez e mantém estado local; salva (patch) sem invalidar (evita clobber ao digitar). */
 function useSocioForm(appId: string | null) {
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["socio", appId],
     queryFn: () => socioApi.get(appId as string),
@@ -39,7 +40,16 @@ function useSocioForm(appId: string | null) {
   }, [q.data, seeded]);
 
   const save = (patch: SocioFormInput) => {
-    if (appId) void socioApi.patch(appId, patch);
+    if (!appId) return;
+    void socioApi.patch(appId, patch).then((updated) => {
+      // Mantém o cache em sincronia com o servidor para que, ao remontar o passo
+      // (a ficha remonta ao navegar), o valor exibido seja o salvo — não o antigo.
+      qc.setQueryData(["socio", appId], updated);
+      // As flags da ficha (ex.: bens não declarados, posse do imóvel, rendas) mudam
+      // a lista de documentos exigidos → invalidar para refletir na tela Documentos.
+      void qc.invalidateQueries({ queryKey: ["application", appId, "required-documents"] });
+      void qc.invalidateQueries({ queryKey: ["required-docs", appId] });
+    });
   };
 
   return { loading: q.isLoading || !seeded, form, setForm, vehicles, setVehicles, expenses, setExpenses, incomes, setIncomes, save };
@@ -72,6 +82,7 @@ export function StepEstudante({ appId }: { appId: string | null }) {
           <input
             className="input"
             placeholder="2026 / 1"
+            maxLength={12}
             defaultValue={form.yearTerm ?? ""}
             onBlur={(e) => { set("yearTerm", e.target.value); save({ yearTerm: e.target.value }); }}
           />
@@ -81,7 +92,10 @@ export function StepEstudante({ appId }: { appId: string | null }) {
           <input
             className="input"
             placeholder="000.00000.00-0"
+            inputMode="numeric"
+            maxLength={14}
             defaultValue={form.nisCadUnico ?? ""}
+            onChange={(e) => { e.target.value = maskNis(e.target.value); }}
             onBlur={(e) => { set("nisCadUnico", e.target.value); save({ nisCadUnico: e.target.value }); }}
           />
           <span className="field-help">Se não possuir Cadastro Único, deixe em branco.</span>
@@ -109,10 +123,38 @@ const TENURES: [string, string, string][] = [
   ["IRREGULAR", "Irregular", "Declaração do morador"],
 ];
 
+const BRAZIL_STATES = [
+  "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO",
+];
+
 export function StepMoradia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
   const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null, cededBy: null };
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const lookupCep = async (cep: string) => {
+    const digits = cep.replace(/\D/g, "");
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      if (!res.ok) return;
+      const data = await res.json() as { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string };
+      if (data.erro) return;
+      const patch: Partial<Form> = {};
+      if (data.logradouro) patch.addressStreet = data.logradouro;
+      if (data.bairro) patch.neighborhood = data.bairro;
+      if (data.localidade) patch.city = data.localidade;
+      if (data.uf) patch.state = data.uf;
+      setField(patch);
+      save({ ...patch, zipCode: cep });
+    } catch {
+      /* ViaCEP indisponível — usuário preenche manualmente */
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
@@ -138,14 +180,53 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
 
       <h3 className="section-title" style={{ marginTop: 18 }}><IconHouse size={15} /> Endereço</h3>
       <div className="form-grid">
-        <div className="field col-8"><label className="field-label">Rua / Avenida</label><input className="input" defaultValue={form.addressStreet ?? ""} onBlur={(e) => { setField({ addressStreet: e.target.value }); save({ addressStreet: e.target.value }); }} /></div>
-        <div className="field col-2"><label className="field-label">Número</label><input className="input" defaultValue={form.addressNumber ?? ""} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} /></div>
-        <div className="field col-2"><label className="field-label">Apto.</label><input className="input" defaultValue={form.addressUnit ?? ""} onBlur={(e) => { setField({ addressUnit: e.target.value }); save({ addressUnit: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Bairro</label><input className="input" defaultValue={form.neighborhood ?? ""} onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }} /></div>
-        <div className="field col-3"><label className="field-label">CEP</label><input className="input" inputMode="numeric" defaultValue={form.zipCode ?? ""} onChange={(e) => { e.target.value = maskCep(e.target.value); }} onBlur={(e) => { setField({ zipCode: e.target.value }); save({ zipCode: e.target.value }); }} /></div>
-        <div className="field col-5"><label className="field-label">Cidade / Estado</label><input className="input" defaultValue={[form.city, form.state].filter(Boolean).join(" / ")} onBlur={(e) => { const [c, s] = e.target.value.split("/").map((x) => x.trim()); setField({ city: c, state: s }); save({ city: c, state: s }); }} /></div>
-        <div className="field col-12"><label className="field-label">Ponto de referência</label><input className="input" defaultValue={form.reference ?? ""} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Telefone fixo</label><input className="input" inputMode="numeric" defaultValue={form.landline ?? ""} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
+        <div className="field col-3">
+          <label className="field-label">CEP<span className="req">*</span></label>
+          <div style={{ position: "relative" }}>
+            <input
+              className="input"
+              inputMode="numeric"
+              maxLength={9}
+              defaultValue={form.zipCode ?? ""}
+              placeholder="00000-000"
+              onChange={(e) => { e.target.value = maskCep(e.target.value); }}
+              onBlur={(e) => {
+                setField({ zipCode: e.target.value });
+                save({ zipCode: e.target.value });
+                void lookupCep(e.target.value);
+              }}
+            />
+            {cepLoading && (
+              <span className="muted small" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)" }}>…</span>
+            )}
+          </div>
+          <span className="field-help">Preencha o CEP para completar o endereço automaticamente.</span>
+        </div>
+        <div className="field col-7"><label className="field-label">Rua / Avenida</label><input key={form.addressStreet} className="input" maxLength={150} defaultValue={form.addressStreet ?? ""} onBlur={(e) => { setField({ addressStreet: e.target.value }); save({ addressStreet: e.target.value }); }} /></div>
+        <div className="field col-2"><label className="field-label">Número</label><input className="input" inputMode="numeric" maxLength={10} defaultValue={form.addressNumber ?? ""} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Bairro</label><input key={form.neighborhood} className="input" maxLength={80} defaultValue={form.neighborhood ?? ""} onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Cidade</label><input key={form.city} className="input" maxLength={100} defaultValue={form.city ?? ""} onBlur={(e) => { setField({ city: e.target.value }); save({ city: e.target.value }); }} /></div>
+        <div className="field col-2">
+          <label className="field-label">Estado</label>
+          <select
+            key={form.state}
+            className="select"
+            defaultValue={form.state ?? ""}
+            onChange={(e) => { setField({ state: e.target.value }); save({ state: e.target.value }); }}
+          >
+            <option value="">—</option>
+            {BRAZIL_STATES.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+          </select>
+        </div>
+        <div className="field col-2">
+          <label className="field-label">Complemento <span className="muted small">(opcional)</span></label>
+          <input className="input" maxLength={40} defaultValue={form.addressUnit ?? ""} placeholder="Apto, bloco, sala…" onBlur={(e) => { setField({ addressUnit: e.target.value }); save({ addressUnit: e.target.value }); }} />
+        </div>
+        <div className="field col-12"><label className="field-label">Ponto de referência</label><input className="input" maxLength={200} defaultValue={form.reference ?? ""} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Telefone fixo</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.landline ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Celular do estudante</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.studentMobile ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ studentMobile: e.target.value }); save({ studentMobile: e.target.value }); }} /></div>
+        <div className="field col-5"><label className="field-label">Pai / mãe / responsável legal</label><input className="input" maxLength={120} defaultValue={form.guardianName ?? ""} onBlur={(e) => { setField({ guardianName: e.target.value }); save({ guardianName: e.target.value }); }} /></div>
+        <div className="field col-3"><label className="field-label">Celular do responsável</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.guardianPhone ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ guardianPhone: e.target.value }); save({ guardianPhone: e.target.value }); }} /></div>
       </div>
 
       <div className="divider" />
@@ -180,16 +261,16 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
 
       <div className="form-grid" style={{ marginTop: 14 }}>
         {form.tenure === "ALUGADO" && (
-          <div className="field col-4"><label className="field-label">Valor do aluguel</label><input className="input" placeholder="R$ 0,00" defaultValue={form.rentValue ?? ""} onBlur={(e) => { const v = toMoney(e.target.value); setField({ rentValue: v ?? null }); save({ rentValue: v }); }} /></div>
+          <div className="field col-4"><label className="field-label">Valor do aluguel</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.rentValue ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ rentValue: v ?? null }); save({ rentValue: v }); }} /></div>
         )}
         {form.tenure === "FINANCIADO" && (
-          <div className="field col-4"><label className="field-label">Valor da prestação</label><input className="input" placeholder="R$ 0,00" defaultValue={form.installmentValue ?? ""} onBlur={(e) => { const v = toMoney(e.target.value); setField({ installmentValue: v ?? null }); save({ installmentValue: v }); }} /></div>
+          <div className="field col-4"><label className="field-label">Valor da prestação</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.installmentValue ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ installmentValue: v ?? null }); save({ installmentValue: v }); }} /></div>
         )}
         {form.tenure === "PROPRIO" && (
-          <div className="field col-4"><label className="field-label">Nº de matrícula do imóvel</label><input className="input" defaultValue={form.propertyRegistry ?? ""} onBlur={(e) => { setField({ propertyRegistry: e.target.value }); save({ propertyRegistry: e.target.value }); }} /></div>
+          <div className="field col-4"><label className="field-label">Nº de matrícula do imóvel</label><input className="input" maxLength={40} defaultValue={form.propertyRegistry ?? ""} onBlur={(e) => { setField({ propertyRegistry: e.target.value }); save({ propertyRegistry: e.target.value }); }} /></div>
         )}
         {form.tenure === "CEDIDO" && (
-          <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)</label><input className="input" defaultValue={form.cededOwnerInfo ?? ""} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
+          <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)</label><input className="input" maxLength={150} defaultValue={form.cededOwnerInfo ?? ""} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
         )}
       </div>
 
@@ -203,8 +284,8 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
       </div>
       {form.hasVehicle && (
         <div className="form-grid">
-          <div className="field col-5"><label className="field-label">Marca / modelo / ano</label><input className="input" defaultValue={veh.description} onBlur={(e) => saveVehicle({ description: e.target.value })} /></div>
-          <div className="field col-3"><label className="field-label">Valor aproximado</label><input className="input" placeholder="R$ 0,00" defaultValue={veh.value ?? ""} onBlur={(e) => saveVehicle({ value: toMoney(e.target.value) ?? null })} /></div>
+          <div className="field col-5"><label className="field-label">Marca / modelo / ano</label><input className="input" maxLength={80} defaultValue={veh.description} onBlur={(e) => saveVehicle({ description: e.target.value })} /></div>
+          <div className="field col-3"><label className="field-label">Valor aproximado</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.value ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveVehicle({ value: toMoney(e.target.value) ?? null })} /></div>
           <div className="field col-4"><label className="field-label">Situação</label>
             <select className="select" defaultValue={veh.status ?? ""} onChange={(e) => saveVehicle({ status: (e.target.value || null) as never })}>
               <option value="">Selecione…</option>
@@ -213,8 +294,11 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
               <option value="CEDIDO">Cedido</option>
             </select>
           </div>
+          {veh.status === "FINANCIADO" && (
+            <div className="field col-3"><label className="field-label">Valor da parcela</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.installment ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveVehicle({ installment: toMoney(e.target.value) ?? null })} /></div>
+          )}
           {veh.status === "CEDIDO" && (
-            <div className="field col-8"><label className="field-label">Cedido por quem?</label><input className="input" defaultValue={veh.cededBy ?? ""} onBlur={(e) => saveVehicle({ cededBy: e.target.value })} /></div>
+            <div className="field col-8"><label className="field-label">Cedido por quem?</label><input className="input" maxLength={80} defaultValue={veh.cededBy ?? ""} onBlur={(e) => saveVehicle({ cededBy: e.target.value })} /></div>
           )}
         </div>
       )}
@@ -242,6 +326,14 @@ const EXPENSE_LABELS = [
 
 // "Outras rendas" e "Outras rendas não contabilizadas" da ficha (valores opcionais, sign +1).
 const EXTRA_INCOME_LABELS = ["Aplicação financeira", "Vale alimentação", "Bolsa Família", "Outras rendas"];
+
+// Notas de ajuda em despesas que costumam gerar duplicidade de valores.
+const EXPENSE_HELP: Record<string, string> = {
+  "Cartão de crédito":
+    "Não considere valores já informados na ficha (ex.: combustível, plano de saúde, alimentação) — evita duplicidade.",
+  "Atividades extracurriculares / cursos":
+    "Apenas valores ainda não declarados. A mensalidade de escola/faculdade já informada no cadastro do membro não deve ser repetida aqui.",
+};
 
 interface YesNoQ { key: keyof Form; label: string; income?: { label: string; sign: number } }
 const INCOME_QUESTIONS: YesNoQ[] = [
@@ -299,7 +391,7 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
             {qst.income && form[qst.key] === true && (
               <div className="input-with-icon" style={{ marginTop: 8, maxWidth: 220 }}>
                 <span className="icon-prefix" style={{ left: 12, color: "var(--ink-500)", fontSize: 12, pointerEvents: "none" }}>R$</span>
-                <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={incomeOf(qst.income.label)} onBlur={(e) => saveIncome(qst.income!.label, qst.income!.sign, e.target.value)} />
+                <input className="input" placeholder="0,00" inputMode="decimal" maxLength={14} style={{ paddingLeft: 36 }} defaultValue={incomeOf(qst.income.label)} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveIncome(qst.income!.label, qst.income!.sign, e.target.value)} />
               </div>
             )}
           </div>
@@ -316,7 +408,7 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
             <label className="field-label">{label}</label>
             <div className="input-with-icon">
               <span className="icon-prefix" style={{ left: 12, color: "var(--ink-500)", fontSize: 12, pointerEvents: "none" }}>R$</span>
-              <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={incomeOf(label)} onBlur={(e) => saveIncome(label, 1, e.target.value)} />
+              <input className="input" placeholder="0,00" inputMode="decimal" maxLength={14} style={{ paddingLeft: 36 }} defaultValue={incomeOf(label)} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveIncome(label, 1, e.target.value)} />
             </div>
           </div>
         ))}
@@ -332,8 +424,9 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
             <label className="field-label">{label}</label>
             <div className="input-with-icon">
               <span className="icon-prefix" style={{ left: 12, color: "var(--ink-500)", fontSize: 12, pointerEvents: "none" }}>R$</span>
-              <input className="input" placeholder="0,00" style={{ paddingLeft: 36 }} defaultValue={amountOf(label)} onBlur={(e) => saveExpense(label, e.target.value)} />
+              <input className="input" placeholder="0,00" inputMode="decimal" maxLength={14} style={{ paddingLeft: 36 }} defaultValue={amountOf(label)} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveExpense(label, e.target.value)} />
             </div>
+            {EXPENSE_HELP[label] && <span className="field-help">{EXPENSE_HELP[label]}</span>}
           </div>
         ))}
       </div>

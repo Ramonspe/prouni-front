@@ -92,6 +92,22 @@ export default function VerifyEmailPage() {
     if (e.key === "Backspace" && !code[i] && i > 0) cellRefs.current[i - 1]?.focus();
   };
 
+  const onCellPaste = (i: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!digits) return;
+    e.preventDefault();
+    setCode((prev) => {
+      const next = [...prev];
+      for (let j = 0; j < digits.length; j++) {
+        if (i + j < 6) next[i + j] = digits[j];
+      }
+      return next;
+    });
+    const lastFilled = Math.min(i + digits.length - 1, 5);
+    const focusTarget = lastFilled < 5 ? lastFilled + 1 : 5;
+    setTimeout(() => cellRefs.current[focusTarget]?.focus(), 0);
+  };
+
   return (
     <SignupShell
       stepId="verify"
@@ -185,6 +201,7 @@ export default function VerifyEmailPage() {
                 aria-label={`Dígito ${i + 1}`}
                 onChange={(e) => onCellChange(i, e.target.value)}
                 onKeyDown={(e) => onCellKey(i, e)}
+                onPaste={(e) => onCellPaste(i, e)}
               />
             ))}
           </div>

@@ -164,6 +164,12 @@ export default function LoginPage() {
               contate o Setor de Bolsas e Programas Assistenciais.
             </div>
           </div>
+
+          <div style={{ marginTop: 18, textAlign: "center" }}>
+            <Link href="/" style={{ fontSize: 13, color: "var(--ink-500)" }}>
+              ← Voltar para a página inicial
+            </Link>
+          </div>
         </form>
       </div>
     </div>
