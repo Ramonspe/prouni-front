@@ -54,7 +54,7 @@ const adminNav: NavItem[] = [
   { id: "doc-templates", label: "Modelos de documentos", icon: IconFile, href: "/admin/operacao/documentos", match: "/admin/operacao/documentos" },
   { group: "Sistema" },
   { id: "audit", label: "Auditoria", icon: IconShield, href: "#" },
-  { id: "settings", label: "Configurações", icon: IconSettings, href: "#" },
+  { id: "settings", label: "Configurações", icon: IconSettings, href: "/admin/configuracoes", match: "/admin/configuracoes" },
 ];
 
 function Sidebar({ role }: { role: Role }) {

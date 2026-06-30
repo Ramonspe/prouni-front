@@ -16,6 +16,7 @@ import type {
   MaintenanceSummaryDto,
   MaintenanceResetResult,
   DocMatrixSyncResult,
+  CourseSyncResult,
   ApplicationDto,
   ApplicationEventDto,
   CampusDto,
@@ -393,6 +394,8 @@ export const maintenanceApi = {
     apiFetch<MaintenanceResetResult>("/admin/maintenance/reset", { method: "POST", body: { confirmation } }),
   syncDocMatrix: () =>
     apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", { method: "POST" }),
+  syncCourses: () =>
+    apiFetch<CourseSyncResult>("/admin/maintenance/sync-courses", { method: "POST" }),
 };
 
 /** Modelos de documentos (Operação → Modelos de documentos): ADMIN e ANALYST. */
