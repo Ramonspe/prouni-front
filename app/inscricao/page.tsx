@@ -21,23 +21,35 @@ import { SignupFooter, SignupShell } from "@/components/signup-shell";
 import { StepEstudante, StepMoradia, StepRendaDespesas, StepRevisao } from "@/components/inscricao-steps";
 import { ApiError, applicationsApi, authApi, coursesApi, documentsApi, familyApi, socioApi, type AuthResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { maskCpf, maskPhone } from "@/lib/format";
+import { maskCpf, maskMoney, maskPhone } from "@/lib/format";
 import {
   INCOME_SITUATIONS,
-  isValidCpf,
   registerSchema,
   type ApplicationDto,
+  type FamilyMemberDto,
   type FamilyMemberInput,
   type RequiredDocumentsDto,
   type SocioFormInput,
 } from "@prouni/shared";
 
-type WizardStep = "account" | "enem" | "curso" | "estudante" | "familia" | "moradia" | "renda" | "docs" | "revisao";
-const WIZARD_STEPS: WizardStep[] = ["account", "enem", "curso", "estudante", "familia", "moradia", "renda", "docs", "revisao"];
+type WizardStep = "account" | "curso" | "estudante" | "familia" | "moradia" | "renda" | "docs" | "revisao";
+const WIZARD_STEPS: WizardStep[] = ["account", "curso", "estudante", "familia", "moradia", "renda", "docs", "revisao"];
 
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const DOB_DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const DOB_YEARS = Array.from({ length: 2014 - 1940 + 1 }, (_, i) => String(2014 - i));
+
+/** Valida CPF pelo algoritmo oficial da Receita Federal. */
+function isValidCpf(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, "");
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const check = (len: number) => {
+    const sum = Array.from({ length: len }, (_, i) => parseInt(d[i]) * (len + 1 - i)).reduce((a, b) => a + b, 0);
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return check(9) === parseInt(d[9]) && check(10) === parseInt(d[10]);
+}
 
 /** Normaliza um valor digitado para a string monetária canônica "1234.56". */
 function toMoney(raw: string): string | undefined {
@@ -156,7 +168,7 @@ function StepAccount({
             <label className="field-label">CPF<span className="req">*</span></label>
             <div className="input-with-icon">
               <IconUser className="icon-prefix" />
-              <input className="input" placeholder="000.000.000-00" inputMode="numeric" value={form.cpf} onChange={(e) => setForm((f) => ({ ...f, cpf: maskCpf(e.target.value) }))} />
+              <input className="input" placeholder="000.000.000-00" inputMode="numeric" maxLength={14} value={form.cpf} onChange={(e) => setForm((f) => ({ ...f, cpf: maskCpf(e.target.value) }))} />
             </div>
             <span className="field-help">O CPF informado deve ser o mesmo do SisProuni.</span>
             {fe.cpf && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.cpf}</span>}
@@ -180,7 +192,7 @@ function StepAccount({
           </div>
           <div className="field col-12">
             <label className="field-label">Nome completo<span className="req">*</span></label>
-            <input className="input" value={form.fullName} onChange={set("fullName")} />
+            <input className="input" maxLength={120} value={form.fullName} onChange={set("fullName")} />
             {fe.fullName && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.fullName}</span>}
           </div>
           <div className="field col-6">
@@ -189,13 +201,13 @@ function StepAccount({
           </div>
           <div className="field col-6">
             <label className="field-label">Celular (com DDD)<span className="req">*</span></label>
-            <input className="input" placeholder="(11) 99999-9999" inputMode="numeric" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: maskPhone(e.target.value) }))} />
+            <input className="input" placeholder="(11) 99999-9999" inputMode="numeric" maxLength={16} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: maskPhone(e.target.value) }))} />
             {fe.phone && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.phone}</span>}
           </div>
           <div className="field col-6">
             <label className="field-label">Senha de acesso<span className="req">*</span></label>
             <div className="input-with-icon">
-              <input type="password" className="input" value={form.password} onChange={set("password")} />
+              <input type="password" className="input" maxLength={72} value={form.password} onChange={set("password")} />
             </div>
             <span className="field-help">Mínimo 8 caracteres com 1 número e 1 caractere especial.</span>
             {fe.password && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.password}</span>}
@@ -203,7 +215,7 @@ function StepAccount({
           <div className="field col-6">
             <label className="field-label">Confirme a senha<span className="req">*</span></label>
             <div className="input-with-icon">
-              <input type="password" className="input" value={form.confirmPassword} onChange={set("confirmPassword")} />
+              <input type="password" className="input" maxLength={72} value={form.confirmPassword} onChange={set("confirmPassword")} />
             </div>
             {fe.confirmPassword && <span className="field-help" style={{ color: "var(--red-700)" }}>{fe.confirmPassword}</span>}
           </div>
@@ -214,7 +226,7 @@ function StepAccount({
             <input type="checkbox" checked={acceptTerms} onChange={() => setAcceptTerms((v) => !v)} />
             <span className="box" />
             <span>
-              Li e aceito o <a href="#" onClick={(e) => e.preventDefault()}>edital PROUNI 2026/1</a> e a{" "}
+              Li e aceito o <a href="#" onClick={(e) => e.preventDefault()}>edital PROUNI 2026/2</a> e a{" "}
               <a href="#" onClick={(e) => e.preventDefault()}>Política de Privacidade</a> conforme a Lei
               13.709/18 (LGPD).
             </span>
@@ -281,97 +293,6 @@ function StepAccount({
         </div>
       </aside>
     </div>
-  );
-}
-
-function StepEnem({
-  value,
-  onChange,
-}: {
-  value: { edition: string; registration: string };
-  onChange: (v: { edition: string; registration: string }) => void;
-}) {
-  const editions = [
-    { y: 2025, dis: false },
-    { y: 2024, dis: false },
-    { y: 2023, dis: true },
-    { y: 2022, dis: true },
-  ];
-  return (
-    <>
-      <h2 className="signup-title">Sua participação no ENEM</h2>
-      <p className="signup-sub">Informe a edição do ENEM utilizada pelo SisProuni para sua pré-seleção.</p>
-
-      <div className="form-grid" style={{ marginTop: 18 }}>
-        <div className="field col-6">
-          <label className="field-label">Edição do ENEM utilizada<span className="req">*</span></label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {editions.map((o) => {
-              const sel = String(o.y) === value.edition;
-              return (
-                <label
-                  key={o.y}
-                  className="radio enem-option"
-                  style={{
-                    border: "1.5px solid " + (sel ? "var(--blue-600)" : "var(--ink-200)"),
-                    background: sel ? "var(--blue-50)" : o.dis ? "var(--ink-100)" : "#fff",
-                    padding: "14px 16px",
-                    borderRadius: 10,
-                    cursor: o.dis ? "not-allowed" : "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    opacity: o.dis ? 0.55 : 1,
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="enem-edition"
-                    disabled={o.dis}
-                    checked={sel}
-                    onChange={() => !o.dis && onChange({ ...value, edition: String(o.y) })}
-                  />
-                  <span className="dot" style={{ borderColor: sel ? "var(--blue-600)" : undefined }} />
-                  <span style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink-900)" }}>ENEM {o.y}</div>
-                    <div className="muted small">
-                      {o.dis ? "Edição não aceita (fora das 2 últimas)" : "Aceita para este ciclo"}
-                    </div>
-                  </span>
-                  {o.dis && <Badge tone="danger" dot={false}>Inválido</Badge>}
-                  {sel && <Badge tone="success" dot={false}>Selecionada</Badge>}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="field col-6">
-          <label className="field-label">Nº de inscrição do ENEM<span className="req">*</span></label>
-          <input
-            className="input mono"
-            inputMode="numeric"
-            maxLength={12}
-            placeholder="000000000000"
-            value={value.registration}
-            onChange={(e) => onChange({ ...value, registration: e.target.value.replace(/\D/g, "").slice(0, 12) })}
-          />
-          <span className="field-help">12 dígitos. Disponível no Cartão de Confirmação ou na conta gov.br.</span>
-        </div>
-      </div>
-
-      <div className="divider" />
-
-      <div className="banner banner-info">
-        <IconDownload className="banner-icon" />
-        <div className="banner-body">
-          <div className="banner-title">Notas importadas automaticamente do MEC</div>
-          As notas das provas objetivas e da redação são obtidas diretamente da base do INEP/MEC a partir
-          do nº de inscrição informado — não é necessário digitá-las. A verificação de elegibilidade é
-          feita de forma automática.
-        </div>
-      </div>
-    </>
   );
 }
 
@@ -444,7 +365,7 @@ function StepCurso({
                 <div style={{ flex: 1, textAlign: "left" }}>
                   <div className="curso-row-name">{c.name}</div>
                   <div className="muted small">
-                    {c.shifts.join(" · ")}{c.durationYears ? ` · ${c.durationYears} anos` : ""}
+                    {c.durationYears ? `${c.durationYears} anos` : ""}
                   </div>
                 </div>
                 {courseId === c.id ? <Badge tone="info" dot={false}>Escolhido</Badge> : <IconChevR size={14} className="muted" />}
@@ -465,14 +386,25 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
     enabled: !!appId,
   });
   const list = members.data ?? [];
-  const refetch = () => qc.invalidateQueries({ queryKey: ["family", appId] });
+  const refetch = () => {
+    void qc.invalidateQueries({ queryKey: ["family", appId] });
+    // O grupo familiar (integrantes e situação de renda) muda a lista de documentos.
+    void qc.invalidateQueries({ queryKey: ["application", appId, "required-documents"] });
+    void qc.invalidateQueries({ queryKey: ["required-docs", appId] });
+  };
 
   const [draft, setDraft] = useState({ fullName: "", relationship: "" });
   const [adding, setAdding] = useState(false);
   const [cpfErrors, setCpfErrors] = useState<Record<string, string>>({});
 
-  const update = (id: string, patch: Partial<FamilyMemberInput>) =>
-    familyApi.update(id, patch).then(refetch).catch(() => {});
+  const update = (id: string, patch: Partial<FamilyMemberInput>) => {
+    // Atualização otimista do cache: campos controlados (ex.: estado civil) refletem
+    // a seleção na hora, sem "piscar" esperando o refetch.
+    qc.setQueryData(["family", appId], (old?: FamilyMemberDto[]) =>
+      (old ?? []).map((x) => (x.id === id ? { ...x, ...(patch as Partial<FamilyMemberDto>) } : x)),
+    );
+    return familyApi.update(id, patch).then(refetch).catch(() => {});
+  };
 
   const addMember = async () => {
     if (!appId || draft.fullName.trim().length < 2 || !draft.relationship.trim()) return;
@@ -534,6 +466,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                   <div className="membro-row1" style={{ gap: 8 }}>
                     <input
                       className="membro-name"
+                      maxLength={120}
                       defaultValue={m.fullName}
                       placeholder="Nome completo"
                       onBlur={(e) => e.target.value !== m.fullName && update(m.id, { fullName: e.target.value })}
@@ -541,6 +474,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                     <input
                       className="input"
                       style={{ maxWidth: 150, height: 30, fontSize: 12.5 }}
+                      maxLength={40}
                       defaultValue={m.relationship}
                       placeholder="Parentesco"
                       onBlur={(e) => e.target.value !== m.relationship && update(m.id, { relationship: e.target.value })}
@@ -552,35 +486,40 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       <input
                         className="input mono"
                         style={{ width: 60, height: 28 }}
+                        inputMode="numeric"
+                        maxLength={3}
                         defaultValue={m.age ?? ""}
+                        onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 3); }}
                         onBlur={(e) => update(m.id, { age: e.target.value ? Number(e.target.value) : undefined })}
                       />
                     </label>
-                    <label className="muted small" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <label className="muted small" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
                       CPF{" "}
                       <input
-                        className={`input mono${cpfErrors[m.id] ? " input-error" : ""}`}
-                        style={{ width: 150, height: 28, borderColor: cpfErrors[m.id] ? "var(--red-600)" : undefined }}
+                        className="input mono"
+                        style={{ width: 150, height: 28, ...(cpfErrors[m.id] ? { borderColor: "var(--red-500)" } : {}) }}
                         inputMode="numeric"
+                        maxLength={14}
                         defaultValue={m.cpf ?? ""}
                         onChange={(e) => { e.target.value = maskCpf(e.target.value); }}
                         onBlur={(e) => {
                           const val = e.target.value;
                           if (val && !isValidCpf(val)) {
-                            setCpfErrors((p) => ({ ...p, [m.id]: "CPF inválido" }));
+                            setCpfErrors((prev) => ({ ...prev, [m.id]: "CPF inválido" }));
                           } else {
-                            setCpfErrors((p) => { const n = { ...p }; delete n[m.id]; return n; });
-                            update(m.id, { cpf: val });
+                            setCpfErrors((prev) => { const n = { ...prev }; delete n[m.id]; return n; });
+                            if (val !== (m.cpf ?? "")) update(m.id, { cpf: val });
                           }
                         }}
                       />
-                      {cpfErrors[m.id] && <span style={{ color: "var(--red-700)", fontSize: 11 }}>{cpfErrors[m.id]}</span>}
+                      {cpfErrors[m.id] && <span style={{ fontSize: 11, color: "var(--red-700)", fontWeight: 500 }}>{cpfErrors[m.id]}</span>}
                     </label>
                     <label className="muted small">
                       Profissão{" "}
                       <input
                         className="input"
                         style={{ width: 170, height: 28 }}
+                        maxLength={80}
                         defaultValue={m.occupation ?? ""}
                         onBlur={(e) => update(m.id, { occupation: e.target.value })}
                       />
@@ -590,7 +529,10 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       <input
                         className="input mono"
                         style={{ width: 120, height: 28 }}
+                        inputMode="decimal"
+                        maxLength={14}
                         defaultValue={m.grossIncome ?? ""}
+                        onChange={(e) => { e.target.value = maskMoney(e.target.value); }}
                         onBlur={(e) => update(m.id, { grossIncome: toMoney(e.target.value) })}
                       />
                     </label>
@@ -598,16 +540,16 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       Estado civil{" "}
                       <select
                         className="input"
-                        style={{ width: 150, height: 28, fontSize: 12.5 }}
-                        defaultValue={m.maritalStatus ?? ""}
+                        style={{ width: 150, height: 28, fontSize: 12.5, padding: "0 8px", lineHeight: "26px" }}
+                        value={m.maritalStatus ?? ""}
                         onChange={(e) => update(m.id, { maritalStatus: e.target.value })}
                       >
                         <option value="">—</option>
-                        <option>Solteiro(a)</option>
-                        <option>Casado(a)</option>
-                        <option>Divorciado(a)</option>
-                        <option>Viúvo(a)</option>
-                        <option>União estável</option>
+                        <option value="Solteiro(a)">Solteiro(a)</option>
+                        <option value="Casado(a)">Casado(a)</option>
+                        <option value="Divorciado(a)">Divorciado(a)</option>
+                        <option value="Viúvo(a)">Viúvo(a)</option>
+                        <option value="União estável">União estável</option>
                       </select>
                     </label>
                     <label className="muted small" style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -619,23 +561,60 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       Responsável financeiro
                     </label>
                     <label className="muted small">
-                      Escola / Universidade{" "}
-                      <input
+                      Grau de escolaridade{" "}
+                      <select
                         className="input"
-                        style={{ width: 200, height: 28 }}
-                        defaultValue={m.schoolName ?? ""}
-                        onBlur={(e) => update(m.id, { schoolName: e.target.value })}
-                      />
+                        style={{ width: 210, height: 28, fontSize: 12.5, padding: "0 8px" }}
+                        value={m.educationLevel ?? ""}
+                        onChange={(e) => update(m.id, { educationLevel: e.target.value })}
+                      >
+                        <option value="">—</option>
+                        <option value="Ensino médio incompleto">Ensino médio incompleto</option>
+                        <option value="Ensino médio completo">Ensino médio completo</option>
+                        <option value="Ensino superior incompleto">Ensino superior incompleto</option>
+                        <option value="Ensino superior completo">Ensino superior completo</option>
+                        <option value="Pós-graduação incompleta">Pós-graduação incompleta</option>
+                        <option value="Pós-graduação completa">Pós-graduação completa</option>
+                      </select>
                     </label>
                     <label className="muted small">
-                      Valor da parcela (R$){" "}
-                      <input
-                        className="input mono"
-                        style={{ width: 120, height: 28 }}
-                        defaultValue={m.schoolFee ?? ""}
-                        onBlur={(e) => update(m.id, { schoolFee: toMoney(e.target.value) })}
-                      />
+                      Estuda atualmente?{" "}
+                      <select
+                        className="input"
+                        style={{ width: 90, height: 28, fontSize: 12.5, padding: "0 8px" }}
+                        value={m.isStudent ? "sim" : "nao"}
+                        onChange={(e) => update(m.id, { isStudent: e.target.value === "sim" })}
+                      >
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                      </select>
                     </label>
+                    {m.isStudent && (
+                      <>
+                        <label className="muted small">
+                          Escola / Universidade{" "}
+                          <input
+                            className="input"
+                            style={{ width: 200, height: 28 }}
+                            maxLength={120}
+                            defaultValue={m.schoolName ?? ""}
+                            onBlur={(e) => update(m.id, { schoolName: e.target.value })}
+                          />
+                        </label>
+                        <label className="muted small">
+                          Valor da mensalidade (R$){" "}
+                          <input
+                            className="input mono"
+                            style={{ width: 120, height: 28 }}
+                            inputMode="decimal"
+                            maxLength={14}
+                            defaultValue={m.schoolFee ?? ""}
+                            onChange={(e) => { e.target.value = maskMoney(e.target.value); }}
+                            onBlur={(e) => update(m.id, { schoolFee: toMoney(e.target.value) })}
+                          />
+                        </label>
+                      </>
+                    )}
                   </div>
                   {(m.age ?? 0) >= 18 && (
                     <div style={{ marginTop: 8 }}>
@@ -738,6 +717,14 @@ function StepDocs({ appId }: { appId: string | null }) {
   const onPick = async (key: string, typeId: string, memberId: string | null, file?: File) => {
     if (!file || !appId) return;
     setUpErr("");
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) {
+      setUpErr("Formato inválido. Envie PDF, JPG ou PNG.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUpErr("Arquivo acima de 10 MB.");
+      return;
+    }
     setBusy(key);
     try {
       await documentsApi.upload(appId, typeId, memberId, file);
@@ -808,11 +795,13 @@ function StepDocs({ appId }: { appId: string | null }) {
                 </div>
                 <div className="docs-cat-body">
                   {cat.items.map((it) => {
-                    const up = upMap.get(it.key);
+                    const up = upMap.get(`${it.typeId}:${it.member?.id ?? "app"}`);
                     const sent = !!up && up.status !== "A_ENVIAR";
+                    const rowClass =
+                      up?.status === "APROVADO" ? "has-file" : up?.status === "REPROVADO" ? "has-rejected" : sent ? "has-pending" : "";
                     return (
-                      <div key={it.key} className="upload-row">
-                        <div className="upload-icon"><IconUpload size={16} /></div>
+                      <div key={it.key} className={`upload-row ${rowClass}`}>
+                        <div className="upload-icon">{sent ? <IconCheck size={16} stroke={2.4} /> : <IconUpload size={16} />}</div>
                         <div style={{ flex: 1 }}>
                           <div className="upload-title" style={{ fontSize: 13 }}>
                             {it.name}
@@ -828,6 +817,11 @@ function StepDocs({ appId }: { appId: string | null }) {
                           {sent && <div className="upload-meta" style={{ color: "var(--green-700)" }}>Enviado: {up!.fileName}</div>}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {it.templateUrl && (
+                            <a className="btn btn-ghost btn-sm" href={it.templateUrl} download title="Baixar modelo para preencher">
+                              <IconDownload size={13} /> Modelo
+                            </a>
+                          )}
                           <Badge tone={up?.status === "APROVADO" ? "success" : up?.status === "REPROVADO" ? "danger" : sent ? "info" : "neutral"}>
                             {up?.status === "APROVADO" ? "Aprovado" : up?.status === "REPROVADO" ? "Reenviar" : sent ? "Enviado" : "A enviar"}
                           </Badge>
@@ -917,7 +911,7 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
-          <button type="button" className="btn btn-ghost"><IconDownload size={14} /> Baixar comprovante</button>
+          <button type="button" className="btn btn-ghost" onClick={() => window.print()}><IconDownload size={14} /> Baixar comprovante</button>
           <Link href="/painel" className="btn btn-primary"><IconChart size={14} /> Ir para minha área</Link>
         </div>
       </div>
@@ -929,13 +923,12 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
 
 export default function InscricaoPage() {
   const router = useRouter();
-  const { setSession, logout } = useAuth();
+  const { setSession } = useAuth();
   const [reg, setReg] = useState<{ registrationToken: string; email: string } | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [done, setDone] = useState(false);
 
   const [appId, setAppId] = useState<string | null>(null);
-  const [enem, setEnem] = useState({ edition: "2025", registration: "" });
   const [campus, setCampus] = useState("SCS");
   const [courseId, setCourseId] = useState<string | null>(null);
   const [finalApp, setFinalApp] = useState<ApplicationDto | null>(null);
@@ -978,19 +971,7 @@ export default function InscricaoPage() {
   const next = async () => {
     setErr("");
     try {
-      if (step === "enem") {
-        if (!["2024", "2025"].includes(enem.edition)) {
-          setErr("Selecione uma edição válida do ENEM (2024 ou 2025).");
-          return;
-        }
-        if (!/^\d{12}$/.test(enem.registration)) {
-          setErr("Informe o nº de inscrição do ENEM (12 dígitos).");
-          return;
-        }
-        setSaving(true);
-        const id = await ensureAppId();
-        if (id) await applicationsApi.enem(id, { edition: Number(enem.edition), registration: enem.registration });
-      } else if (step === "curso") {
+      if (step === "curso") {
         if (!courseId) {
           setErr("Selecione o curso desejado.");
           return;
@@ -1016,20 +997,10 @@ export default function InscricaoPage() {
     }
   };
 
-  // Após criar a conta não se volta ao passo de cadastro (1 = ENEM é o primeiro navegável).
+  // Após criar a conta não se volta ao passo de cadastro (índice 1 = "curso" é o primeiro navegável).
   const back = () => {
     setErr("");
     setStepIdx((i) => Math.max(1, i - 1));
-  };
-
-  // Salva o progresso (já é autosave) e redireciona para o login.
-  const saveAndExit = async () => {
-    try {
-      await logout();
-    } catch {
-      /* ignora falha de logout — redireciona de qualquer forma */
-    }
-    router.push("/login");
   };
 
   const banner =
@@ -1038,16 +1009,6 @@ export default function InscricaoPage() {
         Os documentos devem ser enviados <strong>na ordem abaixo</strong>. Formatos aceitos: PDF, JPG ou
         PNG · até 10 MB cada. Documentos ilegíveis, cortados ou com páginas faltando serão recusados —
         gerando atraso na sua análise.
-      </Banner>
-    ) : step === "enem" ? (
-      <Banner tone="warn" title="Verifique os requisitos antes de prosseguir">
-        Para concorrer ao PROUNI é obrigatório:
-        <ul style={{ margin: "6px 0 0 0", paddingLeft: 20, lineHeight: 1.7 }}>
-          <li>Ter prestado o ENEM em uma das <strong>2 últimas edições</strong> (2024 ou 2025).</li>
-          <li>Ter obtido <strong>nota mínima de 450 pontos</strong> na média das provas objetivas.</li>
-          <li><strong>Não ter zerado a redação</strong>.</li>
-        </ul>
-        Informações em desacordo levam ao indeferimento automático da inscrição.
       </Banner>
     ) : undefined;
 
@@ -1074,7 +1035,6 @@ export default function InscricaoPage() {
           }}
         />
       )}
-      {step === "enem" && <StepEnem value={enem} onChange={setEnem} />}
       {step === "curso" && (
         <StepCurso
           campus={campus}
@@ -1097,7 +1057,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} onExit={saveAndExit} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
       )}
     </SignupShell>
   );

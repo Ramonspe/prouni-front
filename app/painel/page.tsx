@@ -1,14 +1,53 @@
 "use client";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Banner, StatusBadge, Stepper, Timeline } from "@/components/ui";
 import { IconChevR, IconClock, IconDownload, IconFile, IconGraduate, IconHouse, IconUpload } from "@/components/icons";
 import { useAuth } from "@/lib/auth-context";
 import { useRequireAuth } from "@/lib/use-require-auth";
-import { applicationsApi } from "@/lib/api";
+import { applicationsApi, coursesApi } from "@/lib/api";
 import { formatDateBR, formatDateTimeBR } from "@/lib/format";
 import type { ApplicationEventDto, ProcessStatus, TimelineItemData } from "@prouni/shared";
+
+/** Editor de curso/campus (A2) — disponível enquanto a inscrição não foi enviada. */
+function CursoEditor({ appId, currentCourseId, campusCode }: { appId: string; currentCourseId: string | null; campusCode: string | null }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [campus, setCampus] = useState(campusCode ?? "SCS");
+  const [courseId, setCourseId] = useState(currentCourseId ?? "");
+  const campuses = useQuery({ queryKey: ["campuses"], queryFn: () => coursesApi.campuses(), enabled: open });
+  const courses = useQuery({ queryKey: ["courses", campus], queryFn: () => coursesApi.courses(campus), enabled: open });
+  const mut = useMutation({
+    mutationFn: () => applicationsApi.course(appId, { courseId }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["application", "me"] }); setOpen(false); },
+  });
+
+  if (!open) {
+    return (
+      <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>
+        Alterar curso
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <select className="input" style={{ maxWidth: 160 }} value={campus} onChange={(e) => { setCampus(e.target.value); setCourseId(""); }}>
+        {(campuses.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+      </select>
+      <select className="input" style={{ maxWidth: 260 }} value={courseId} onChange={(e) => setCourseId(e.target.value)}>
+        <option value="">Selecione o curso…</option>
+        {(courses.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <button className="btn btn-primary btn-sm" disabled={!courseId || mut.isPending} onClick={() => mut.mutate()}>
+        {mut.isPending ? "Salvando…" : "Salvar"}
+      </button>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>Cancelar</button>
+      {mut.isError && <span className="upload-meta error">{(mut.error as Error).message}</span>}
+    </div>
+  );
+}
 
 const STEP_LABELS = ["Acesso", "Ficha socioeconômica", "Upload de documentos", "Análise", "Resultado"];
 const STEP_BY_STATUS: Record<ProcessStatus, number> = {
@@ -77,6 +116,9 @@ export default function PainelPage() {
                         <IconHouse size={14} /> Campus <strong>{data.course ? data.course.campus.name : "—"}</strong>
                       </span>
                     </div>
+                    {["iniciada", "pendencia"].includes(data.status) && (
+                      <CursoEditor appId={data.id} currentCourseId={data.course?.id ?? null} campusCode={data.course?.campus.code ?? null} />
+                    )}
                   </div>
                   <div className="vaga-modalidade">
                     <div className="vaga-modalidade-label">Modalidade da bolsa</div>
@@ -90,10 +132,6 @@ export default function PainelPage() {
                   <div className="vaga-foot-item">
                     <span className="muted small">Pré-seleção MEC/SisProuni</span>
                     <span className="mono">{formatDateBR(data.createdAt)}</span>
-                  </div>
-                  <div className="vaga-foot-item">
-                    <span className="muted small">ENEM utilizado</span>
-                    <span>{data.enem.edition ? `Edição ${data.enem.edition}` : "Não informado"}</span>
                   </div>
                   <div className="vaga-foot-item">
                     <span className="muted small">Status</span>
@@ -120,6 +158,38 @@ export default function PainelPage() {
               <div style={{ marginBottom: 18 }}>
                 <Banner tone="warn" title="Há documentos com pendência">
                   A equipe de bolsas solicitou ajustes. <Link href="/documentos" style={{ marginLeft: 6 }}>Resolver pendências →</Link>
+                </Banner>
+              </div>
+            )}
+
+            {["enviada", "analise_doc", "analise_socio"].includes(data.status) && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="info" title="Inscrição recebida — em análise">
+                  Sua inscrição foi enviada e está em análise pela equipe de Bolsas. Você será avisado por aqui e por e-mail quando houver novidades.
+                </Banner>
+              </div>
+            )}
+
+            {["classificado", "concedida"].includes(data.status) && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="success" title="Inscrição classificada">
+                  Parabéns! Sua inscrição foi classificada na análise socioeconômica. Acompanhe em <Link href="/notificacoes" style={{ marginLeft: 4 }}>Notificações</Link> os próximos passos da matrícula.
+                </Banner>
+              </div>
+            )}
+
+            {data.status === "espera" && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="info" title="Você está na lista de espera">
+                  Sua inscrição foi analisada e, no momento, não há vaga disponível. Caso surjam novas vagas, entraremos em contato seguindo a ordem de classificação — mantenha seus dados e documentos atualizados.
+                </Banner>
+              </div>
+            )}
+
+            {data.status === "indeferido" && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="danger" title="Inscrição não aprovada">
+                  Após a análise, sua inscrição não foi aprovada nesta etapa. Veja o motivo e o parecer em <Link href="/notificacoes" style={{ marginLeft: 4 }}>Notificações</Link>. Em caso de dúvidas, fale com a Secretaria de Bolsas.
                 </Banner>
               </div>
             )}

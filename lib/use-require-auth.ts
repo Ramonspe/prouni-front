@@ -12,3 +12,20 @@ export function useRequireAuth() {
   }, [loading, user, router]);
   return { user, loading };
 }
+
+const STAFF_ROLES = ["ADMIN", "ANALYST", "VIEWER"];
+
+/** Exige sessão de equipe (admin/analista/visualizador) — candidato vai para /painel. */
+export function useRequireStaff() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    if (!STAFF_ROLES.includes(user.role)) router.replace("/painel");
+  }, [loading, user, router]);
+  return { user, loading };
+}

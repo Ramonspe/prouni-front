@@ -19,7 +19,7 @@ export default function WelcomePage() {
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14, fontSize: 13, color: "#4a5872" }}>
-          <Link href="#" style={{ color: "#4a5872" }}>Edital 2026/1</Link>
+          <Link href="#" style={{ color: "#4a5872" }}>Edital 2026/2</Link>
           <Link href="#" style={{ color: "#4a5872" }}>Perguntas frequentes</Link>
           <Link href="#" style={{ color: "#4a5872" }}>Falar com a secretaria</Link>
         </div>
@@ -29,7 +29,7 @@ export default function WelcomePage() {
         <div className="welcome-hero">
           <div className="welcome-eyebrow">
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#004080" }} />
-            Inscrições abertas · Ciclo 2026/1 até 09/jun/2026
+            Inscrições abertas · Ciclo 2026/2
           </div>
           <h1 className="welcome-title">
             Sua bolsa<br />
@@ -98,9 +98,9 @@ export default function WelcomePage() {
               <IconChevR size={14} />
             </Link>
             <div className="welcome-cta-foot small">
-              <Link href="#">Esqueci minha senha</Link>
+              <Link href="/recuperar-senha">Esqueci minha senha</Link>
               <span style={{ color: "#c3cad8", margin: "0 8px" }}>·</span>
-              <Link href="#">Não recebi o token</Link>
+              <Link href="/verificar">Não recebi o token</Link>
             </div>
           </div>
 

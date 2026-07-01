@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
@@ -84,52 +84,72 @@ export default function ManutencaoPage() {
           </Banner>
         ) : (
           <>
-            {/* Cursos e campi */}
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header"><h3 className="h-card-title">Cursos e campi</h3></div>
+            <Banner tone="info" title="A edição do dia a dia mudou de lugar">
+              Cursos e documentos agora são gerenciados em <strong>Operação → Cursos e Documentos</strong>,
+              com o banco como fonte da verdade. Os botões abaixo servem apenas para <strong>restaurar o
+              padrão de fábrica</strong> definido no código — o que <strong>sobrescreve</strong> as edições
+              feitas por lá. Use só para recriar a base inicial ou desfazer alterações.
+            </Banner>
+
+            {/* Cursos e campi — restaurar padrão */}
+            <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+              <div className="card-header"><h3 className="h-card-title">Cursos e campi — restaurar padrão</h3></div>
               <div className="card-body">
                 <p className="muted small" style={{ marginBottom: 10 }}>
-                  Sincroniza os campi (SCS e SP) e os 16 cursos do edital no banco de dados.
-                  Idempotente — execute após um deploy com alterações no catálogo de cursos.
+                  Recria os campi (SCS e SP) e a lista de cursos padrão do código no banco,
+                  <strong> sobrescrevendo</strong> edições feitas em Operação → Cursos e Documentos.
                 </p>
                 {coursesMut.isSuccess && (
-                  <Banner tone="success" title="Cursos sincronizados">
+                  <Banner tone="success" title="Cursos restaurados">
                     {coursesMut.data.coursesUpserted} curso(s) em {coursesMut.data.campuses} campus(i).
                   </Banner>
                 )}
                 {coursesMut.isError && (
-                  <Banner tone="danger" title="Não foi possível sincronizar">
+                  <Banner tone="danger" title="Não foi possível restaurar">
                     {(coursesMut.error as Error).message}
                   </Banner>
                 )}
-                <button className="btn btn-secondary" disabled={coursesMut.isPending} onClick={() => coursesMut.mutate()}>
-                  {coursesMut.isPending ? "Sincronizando…" : "Sincronizar cursos"}
+                <button
+                  className="btn btn-secondary"
+                  disabled={coursesMut.isPending}
+                  onClick={() => {
+                    if (confirm("Restaurar a lista de cursos padrão? Isso sobrescreve as edições feitas em Operação → Cursos e Documentos.")) coursesMut.mutate();
+                  }}
+                >
+                  {coursesMut.isPending ? "Restaurando…" : "Restaurar cursos padrão"}
                 </button>
               </div>
             </div>
 
-            {/* Matriz documental — publica modelos para download + escopo LGPD */}
+            {/* Matriz documental — restaurar padrão */}
             <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header"><h3 className="h-card-title">Matriz documental (modelos para download)</h3></div>
+              <div className="card-header"><h3 className="h-card-title">Matriz documental — restaurar padrão</h3></div>
               <div className="card-body">
                 <p className="muted small" style={{ marginBottom: 10 }}>
-                  Publica/atualiza no ciclo ativo os tipos de documento, os <strong>modelos para download</strong> (anexos)
-                  e o escopo do termo LGPD. Idempotente e seguro — não afeta candidatos nem pré-selecionados.
-                  Use após um deploy para os botões “Baixar modelo” aparecerem.
+                  Recria a matriz padrão do código no ciclo ativo (tipos de documento, condições,
+                  <strong> modelos para download</strong> e escopo do termo LGPD),
+                  <strong> sobrescrevendo</strong> edições feitas em Operação → Cursos e Documentos.
+                  Não afeta candidatos nem pré-selecionados.
                 </p>
                 {matrixMut.isSuccess && (
-                  <Banner tone="success" title="Matriz sincronizada">
+                  <Banner tone="success" title="Matriz restaurada">
                     Ciclo {matrixMut.data.cycleLabel}: {matrixMut.data.activeTypes} tipos ativos ·{" "}
                     {matrixMut.data.withTemplate} com modelo para download.
                   </Banner>
                 )}
                 {matrixMut.isError && (
-                  <Banner tone="danger" title="Não foi possível sincronizar">
+                  <Banner tone="danger" title="Não foi possível restaurar">
                     {(matrixMut.error as Error).message}
                   </Banner>
                 )}
-                <button className="btn btn-secondary" disabled={matrixMut.isPending} onClick={() => matrixMut.mutate()}>
-                  {matrixMut.isPending ? "Sincronizando…" : "Sincronizar matriz documental"}
+                <button
+                  className="btn btn-secondary"
+                  disabled={matrixMut.isPending}
+                  onClick={() => {
+                    if (confirm("Restaurar a matriz documental padrão? Isso sobrescreve as edições feitas em Operação → Cursos e Documentos.")) matrixMut.mutate();
+                  }}
+                >
+                  {matrixMut.isPending ? "Restaurando…" : "Restaurar matriz padrão"}
                 </button>
               </div>
             </div>
