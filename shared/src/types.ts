@@ -185,6 +185,7 @@ export interface FamilyMemberDto {
   cpf: string | null;
   relationship: string;
   maritalStatus: string | null;
+  educationLevel: string | null;
   occupation: string | null;
   incomeSituations: IncomeSituation[];
   receivesCommissionOvertime: boolean; // sub-pergunta de assalariado → 6 holerites
@@ -206,6 +207,7 @@ export interface DocumentTypeDto {
   conditionValues: string[];
   appliesTo: string | null;
   requiresSignature: boolean; // exige assinatura gov.br / firma em cartório
+  templateUrl: string | null; // modelo para download (anexo), quando houver
 }
 
 export interface DocumentCategoryDto {
@@ -247,6 +249,9 @@ export interface SocioFormDto {
     propertyRegistry: string | null;
     cededOwnerInfo: string | null;
     landline: string | null;
+    studentMobile: string | null;
+    guardianName: string | null;
+    guardianPhone: string | null;
     hasOtherIncome: boolean;
     hasVehicle: boolean;
     // Flags de "outras rendas"/situação que disparam documentos condicionais.
@@ -278,6 +283,7 @@ export interface RequiredDocumentDto {
   scope: DocScope;
   conditionLabel: string | null; // texto amigável da condição (ex.: "Imóvel alugado")
   requiresSignature: boolean; // exige assinatura gov.br / firma em cartório
+  templateUrl: string | null; // modelo para download (anexo), quando houver
   member: { id: string; name: string; relationship: string } | null; // a quem se refere
 }
 
@@ -308,4 +314,360 @@ export interface UploadedDocumentDto {
   fileName: string | null;
   versionNo: number | null;
   reviewComment?: string | null;
+  reviewedAt?: string | null; // ISO da última revisão (aprovação/reprovação)
+}
+
+/**
+ * Linha da fila administrativa: uma inscrição com campos agregados para a
+ * listagem da área admin (painel e gestão de candidatos). Somente leitura.
+ */
+export interface AdminApplicationRow {
+  id: string; // applicationId (cuid)
+  protocol: string; // "PRN-2026-0001"
+  name: string;
+  cpf: string; // formatado: 000.000.000-00
+  course: string; // nome do curso ou "—"
+  status: ProcessStatus;
+  priority: Priority;
+  docsSent: number; // documentos com arquivo enviado
+  docsApproved: number; // documentos aprovados
+  perCapita: string | null; // renda bruta per capita (string decimal) ou null
+  analyst: string | null; // nome do analista responsável, ou null
+  updatedAt: string; // ISO
+}
+
+/** Documento enviado, visão do analista (slot + tipo + integrante + revisão). */
+export interface AdminDocumentDto {
+  documentId: string | null; // id do slot Document (null se ainda não há slot criado)
+  documentTypeId: string;
+  name: string; // nome do tipo de documento
+  category: string; // título da categoria
+  memberName: string | null; // integrante a que se refere (ou null = inscrição)
+  status: DocumentStatusDb;
+  fileName: string | null;
+  versionNo: number | null;
+  reviewComment: string | null; // comentário da última revisão
+}
+
+/** Membro da equipe (para atribuição de analista). */
+export interface AdminAnalystDto {
+  id: string;
+  name: string;
+}
+
+/** Aprovação/reprovação de um documento pelo analista. */
+export interface AdminDocumentReviewInput {
+  decision: "APROVADO" | "REPROVADO";
+  comment?: string;
+  rejectionReason?: string;
+}
+
+/** Decisão/parecer do analista sobre a inscrição. */
+export interface AdminDecisionInput {
+  parecer: string;
+  decision: "CLASSIFICAR" | "PENDENCIA" | "LISTA_ESPERA" | "INDEFERIR";
+  scholarshipKind?: "INTEGRAL" | "PARCIAL" | null;
+  reasonCode?: string | null; // motivo categórico — obrigatório em PENDENCIA/INDEFERIR
+  isFinal?: boolean;
+}
+
+/** Motivos categóricos por decisão (obrigatórios em pendência/indeferimento; alimentam indicadores). */
+export const DECISION_REASONS: Record<
+  "PENDENCIA" | "INDEFERIR",
+  { value: string; label: string }[]
+> = {
+  PENDENCIA: [
+    { value: "DOC_ILEGIVEL", label: "Documento ilegível" },
+    { value: "DOC_FALTANTE", label: "Documento faltante" },
+    { value: "DOC_DIVERGENTE", label: "Documento divergente ou inválido" },
+    { value: "RENDA_NAO_COMPROVADA", label: "Renda não comprovada" },
+    { value: "OUTRO", label: "Outro" },
+  ],
+  INDEFERIR: [
+    { value: "RENDA_ACIMA", label: "Renda per capita acima do limite" },
+    { value: "DOC_INCOMPLETA", label: "Documentação incompleta" },
+    { value: "INELEGIVEL", label: "Não atende aos critérios do edital" },
+    { value: "DESISTENCIA", label: "Desistência do candidato" },
+    { value: "OUTRO", label: "Outro" },
+  ],
+};
+
+/** Candidato pré-selecionado (linha da matriz importada do MEC/manual). */
+export interface PreselectionEntryDto {
+  id: string;
+  cpf: string; // formatado 000.000.000-00
+  fullName: string | null;
+  courseHint: string | null;
+  campusHint: string | null;
+  enemRegistration: string | null;
+  claimed: boolean; // já virou inscrição (não pode excluir)
+  createdAt: string;
+}
+
+/** Criação/edição manual de um pré-selecionado. */
+export interface PreselectionInput {
+  cpf: string;
+  fullName?: string | null;
+  courseHint?: string | null;
+  campusHint?: string | null;
+  enemRegistration?: string | null;
+}
+
+/** Resultado da importação de planilha (CSV/Excel) de pré-selecionados. */
+export interface PreselectionImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: { line: number; cpf: string; reason: string }[];
+}
+
+/** Contagens da base de candidatos (preview/resultado da limpeza de manutenção). */
+export interface MaintenanceSummaryDto {
+  candidates: number;
+  applications: number;
+  documents: number;
+  documentVersions: number;
+  familyMembers: number;
+  socioForms: number;
+  decisions: number;
+  consents: number;
+  notifications: number;
+  verificationTokens: number;
+  preselectionEntries: number;
+  preselectionImports: number;
+  auditLogs: number;
+}
+
+/** Resultado da limpeza da base (quantidades efetivamente removidas). */
+export interface MaintenanceResetResult {
+  deleted: MaintenanceSummaryDto;
+}
+
+/** Resultado da sincronização da matriz documental (modelos + escopos) no ciclo ativo. */
+export interface DocMatrixSyncResult {
+  cycleLabel: string;
+  activeTypes: number;
+  withTemplate: number;
+}
+
+/** Resultado da sincronização do catálogo de cursos/campi. */
+export interface CourseSyncResult {
+  campuses: number;
+  coursesUpserted: number;
+}
+
+/* ============ Catálogo da matriz documental (editor visual) ============ */
+// Estas listas descrevem, de forma legível, como a matriz de documentos é
+// configurável na tela "Cursos e Documentos" (Operação). As CONDIÇÕES e seus
+// VALORES são fixos em código (cada um lê um campo específico da ficha), mas a
+// associação "condição → documento" é 100% editável e vive no banco.
+
+/** Fontes de "outra renda" que disparam documentos (condição OTHER_INCOME). */
+export type OtherIncomeSource =
+  | "AJUDA_TERCEIROS"
+  | "BENEFICIO_SOCIAL"
+  | "PENSAO_RECEBIDA"
+  | "PENSAO_PAGA"
+  | "PENSAO_NAO_RECEBIDA"
+  | "ALUGUEL_RECEBIDO";
+
+/** Escopos possíveis de um documento (quantas vezes ele é exigido). */
+export const DOC_SCOPES: { value: DocScope; label: string; hint: string }[] = [
+  { value: "APPLICATION", label: "Uma vez por inscrição", hint: "Um único documento para toda a inscrição" },
+  { value: "EACH_MEMBER", label: "Um por integrante", hint: "Exigido de cada pessoa do grupo familiar" },
+  { value: "EACH_ADULT", label: "Um por maior de 18", hint: "Exigido de cada integrante com 18 anos ou mais" },
+];
+
+/** Posses de imóvel (valores da condição HOUSING_TENURE). */
+export const HOUSING_TENURES: { value: HousingTenure; label: string }[] = [
+  { value: "PROPRIO", label: "Imóvel próprio" },
+  { value: "ALUGADO", label: "Imóvel alugado" },
+  { value: "CEDIDO", label: "Imóvel cedido" },
+  { value: "FINANCIADO", label: "Imóvel financiado" },
+  { value: "IRREGULAR", label: "Imóvel em situação irregular" },
+];
+
+/** Fontes de outra renda (valores da condição OTHER_INCOME). */
+export const OTHER_INCOME_SOURCES: { value: OtherIncomeSource; label: string }[] = [
+  { value: "AJUDA_TERCEIROS", label: "Recebe ajuda financeira de terceiros" },
+  { value: "BENEFICIO_SOCIAL", label: "Recebe benefício social (BPC, Bolsa Família…)" },
+  { value: "PENSAO_RECEBIDA", label: "Recebe pensão alimentícia" },
+  { value: "PENSAO_PAGA", label: "Paga pensão alimentícia" },
+  { value: "PENSAO_NAO_RECEBIDA", label: "Deveria receber pensão e não recebe" },
+  { value: "ALUGUEL_RECEBIDO", label: "Recebe renda de aluguel" },
+];
+
+/** Qual conjunto de valores uma condição usa (a UI monta o seletor a partir disso). */
+export type ConditionValueSet = "NONE" | "INCOME_SITUATION" | "HOUSING_TENURE" | "OTHER_INCOME";
+
+/** Catálogo legível das condições que disparam um documento (ordenado para a UI). */
+export const DOC_CONDITIONS: { value: DocCondition; label: string; valueSet: ConditionValueSet }[] = [
+  { value: "ALWAYS", label: "Sempre exigido (dentro do escopo)", valueSet: "NONE" },
+  { value: "INCOME_SITUATION", label: "Conforme a situação de renda do integrante", valueSet: "INCOME_SITUATION" },
+  { value: "HOUSING_TENURE", label: "Conforme a posse do imóvel", valueSet: "HOUSING_TENURE" },
+  { value: "OTHER_INCOME", label: "Conforme a outra renda declarada", valueSet: "OTHER_INCOME" },
+  { value: "HAS_VEHICLE", label: "Quando a família declara possuir veículo", valueSet: "NONE" },
+  { value: "OPT_IN_COTAS", label: "Quando a inscrição concorre por cotas", valueSet: "NONE" },
+  { value: "GUARDIANSHIP", label: "Quando os pais não compõem o grupo familiar", valueSet: "NONE" },
+  { value: "IS_PCD", label: "Quando o candidato é pessoa com deficiência", valueSet: "NONE" },
+  { value: "IS_IMT_AFFILIATED", label: "Quando é funcionário/professor/dependente do IMT", valueSet: "NONE" },
+  { value: "HAS_UNDECLARED_ASSETS", label: "Quando declara bens não informados no IR", valueSet: "NONE" },
+  { value: "INCOME_COMMISSION_OVERTIME", label: "Quando o integrante recebe comissão ou hora extra", valueSet: "NONE" },
+  { value: "COMPANY_INACTIVE", label: "Quando é sócio de empresa inativa", valueSet: "NONE" },
+];
+
+/** Rótulo legível de um valor de condição, conforme o conjunto ao qual pertence. */
+export function conditionValueLabel(valueSet: ConditionValueSet, value: string): string {
+  const find = (arr: { value: string; label: string }[]) =>
+    arr.find((o) => o.value === value)?.label ?? value;
+  if (valueSet === "INCOME_SITUATION") return find(INCOME_SITUATIONS);
+  if (valueSet === "HOUSING_TENURE") return find(HOUSING_TENURES);
+  if (valueSet === "OTHER_INCOME") return find(OTHER_INCOME_SOURCES);
+  return value;
+}
+
+/** Tipo de documento com todos os campos editáveis (tela de catálogo). */
+export interface CatalogDocTypeDto {
+  id: string;
+  code: string;
+  name: string;
+  categoryId: string;
+  required: boolean;
+  scope: DocScope;
+  condition: DocCondition;
+  conditionValues: string[];
+  appliesTo: string | null;
+  requiresSignature: boolean;
+  templateUrl: string | null;
+  active: boolean;
+  sortOrder: number;
+  documentsCount: number; // uploads de candidatos (bloqueia a exclusão)
+}
+
+/** Categoria com seus tipos (tela de catálogo). */
+export interface CatalogCategoryDto {
+  id: string;
+  code: string;
+  title: string;
+  colorVar: string | null;
+  sortOrder: number;
+  types: CatalogDocTypeDto[];
+}
+
+/** Curso com contagem de inscrições vinculadas (bloqueia a exclusão). */
+export interface CatalogCourseDto extends CourseDto {
+  applicationsCount: number;
+}
+
+/** Perfis de equipe que podem acessar o sistema (exclui CANDIDATE). */
+export type StaffRole = "ADMIN" | "ANALYST" | "VIEWER";
+
+/** Usuário interno (equipe) — linha do CRUD de Configurações → Usuários. */
+export interface UserDto {
+  id: string;
+  fullName: string;
+  cpf: string; // formatado 000.000.000-00
+  email: string;
+  role: StaffRole;
+  active: boolean;
+  createdAt: string;
+}
+
+/** Criação de usuário interno (senha obrigatória). */
+export interface UserCreateInput {
+  fullName: string;
+  cpf: string;
+  email: string;
+  role: StaffRole;
+  password: string;
+}
+
+/** Edição de usuário interno (campos opcionais; senha em branco mantém a atual). */
+export interface UserUpdateInput {
+  fullName?: string;
+  email?: string;
+  role?: StaffRole;
+  active?: boolean;
+  password?: string;
+}
+
+/** Renda bruta final apurada pela assistente social (uso interno). */
+export interface AdminIncomeInput {
+  grossIncome: string | null; // valor apurado (string decimal) ou null para limpar
+  note?: string | null; // justificativa do ajuste
+}
+
+/** Indicadores agregados do ciclo ativo para o painel de gestão. */
+export interface AdminStatsDto {
+  totalApplications: number;
+  byStatus: { status: ProcessStatus; count: number }[];
+  funnel: { label: string; count: number; pct: number }[];
+  byCourse: { course: string; count: number }[];
+  rejectionReasons: { reason: string; count: number }[];
+  analysts: { name: string; assigned: number; decisions: number }[];
+  avgDaysToDecision: number | null;
+}
+
+/** Ações registradas na trilha de auditoria (espelha o enum AuditAction do Prisma). */
+export type AuditLogAction =
+  | "LOGIN"
+  | "LOGOUT"
+  | "ACCOUNT_CREATED"
+  | "ACCOUNT_CREATE_FAILED"
+  | "EMAIL_VERIFIED"
+  | "FICHA_SUBMITTED"
+  | "DOC_UPLOADED"
+  | "DOC_APPROVED"
+  | "DOC_REJECTED"
+  | "DOC_REVERTED"
+  | "DOC_DOWNLOADED"
+  | "ANALYST_ASSIGNED"
+  | "PARECER_SAVED"
+  | "DECISION_MADE"
+  | "STATUS_CHANGED"
+  | "PRESELECTION_IMPORTED"
+  | "CONFIG_CHANGED"
+  | "CLIENT_ERROR";
+
+/**
+ * Linha da trilha de auditoria para a tela Auditoria → Logs. Reúne ações da equipe,
+ * do candidato e falhas técnicas (cadastro que não concluiu, erros de requisição do
+ * front) — para diagnóstico e repasse à infraestrutura. Somente leitura, restrito a ADMIN.
+ */
+export interface AuditLogDto {
+  id: string;
+  action: AuditLogAction;
+  actorName: string | null; // nome do usuário autor (null = anônimo/sistema)
+  actorRole: string | null;
+  entityType: string; // "User", "Application", "ClientError"...
+  entityId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown> | null; // detalhe técnico (status HTTP, URL, motivo…)
+  createdAt: string; // ISO
+}
+
+/** Detalhe completo de uma inscrição para a tela de análise (somente leitura — Fase 2). */
+export interface AdminApplicationDetail {
+  id: string;
+  protocol: string;
+  name: string;
+  cpf: string;
+  email: string;
+  course: string;
+  campus: string | null;
+  status: ProcessStatus;
+  priority: Priority;
+  optsForQuota: boolean;
+  createdAt: string;
+  updatedAt: string;
+  analyst: string | null;
+  /** Renda bruta final apurada pela assistente social (uso interno) e justificativa. */
+  analystGrossIncome: string | null;
+  analystIncomeNote: string | null;
+  summary: SocioSummaryDto;
+  family: FamilyMemberDto[];
+  documents: AdminDocumentDto[];
+  docTotals: { required: number; sent: number; approved: number };
+  events: ApplicationEventDto[];
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { IconAlert, IconEye, IconEyeOff, IconLock, IconShield, IconUser } from "@/components/icons";
 import { useAuth } from "@/lib/auth-context";
@@ -96,6 +97,8 @@ export default function LoginPage() {
                   id="cpf"
                   className="input"
                   placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  maxLength={14}
                   value={cpf}
                   onChange={(e) => setCpf(formatCPF(e.target.value))}
                   autoComplete="username"
@@ -108,9 +111,9 @@ export default function LoginPage() {
                 <label className="field-label" htmlFor="pwd">
                   Senha<span className="req">*</span>
                 </label>
-                <a href="#" style={{ fontSize: 12, color: "var(--blue-700)" }} onClick={(e) => e.preventDefault()}>
+                <Link href="/recuperar-senha" style={{ fontSize: 12, color: "var(--blue-700)" }}>
                   Esqueci minha senha
-                </a>
+                </Link>
               </div>
               <div className="input-with-icon">
                 <IconLock className="icon-prefix" />
@@ -119,6 +122,7 @@ export default function LoginPage() {
                   type={showPwd ? "text" : "password"}
                   className="input"
                   placeholder="Senha enviada por e-mail"
+                  maxLength={72}
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
                   autoComplete="current-password"

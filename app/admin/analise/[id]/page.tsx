@@ -1,222 +1,441 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
-import { Avatar, Badge, PriorityBadge, StatusBadge, Stepper, Timeline } from "@/components/ui";
-import {
-  IconAlert,
-  IconCheck,
-  IconChevL,
-  IconDownload,
-  IconExternal,
-  IconHistory,
-  IconMessage,
-  IconPrint,
-  IconUpload,
-  IconZoom,
-} from "@/components/icons";
-import { CANDIDATES } from "@/lib/mock-data";
+import { Avatar, Badge, Banner, PriorityBadge, StatusBadge, Stepper, Timeline } from "@/components/ui";
+import { IconAlert, IconCheck, IconChevL, IconDownload, IconExternal, IconEye, IconHistory, IconUpload, IconUser, IconX } from "@/components/icons";
+import { useRequireStaff } from "@/lib/use-require-auth";
+import { adminApi } from "@/lib/api";
+import { DECISION_REASONS, type AdminDecisionInput, type AdminDocumentDto, type DocumentStatusDb, type ProcessStatus } from "@prouni/shared";
 
-const docTabs: [string, string][] = [
-  ["renda", "Comprovante de renda"],
-  ["ir", "Declaração de IR"],
-  ["res", "Comp. de residência"],
-  ["ficha", "Ficha socioeconômica"],
+/**
+ * Etapa atual do stepper derivada dos FATOS da inscrição (não só do status):
+ * aprovar/enviar documentos não muda o status, então usamos os artefatos reais
+ * para refletir o progresso (0=Acesso, 1=Ficha, 2=Documentos, 3=Análise, 4=Resultado).
+ */
+function deriveStep(d: {
+  status: ProcessStatus;
+  docTotals: { sent: number; approved: number };
+  summary: { membersCount: number };
+}): number {
+  if (["classificado", "espera", "indeferido", "concedida"].includes(d.status)) return 4;
+  if (d.status === "analise_socio" || d.status === "analise_doc" || d.docTotals.approved > 0) return 3;
+  if (d.status === "enviada" || d.status === "pendencia" || d.docTotals.sent > 0) return 2;
+  if (d.summary.membersCount > 0) return 1;
+  return 0;
+}
+const DECISIONS: { id: AdminDecisionInput["decision"]; label: string; tone: "success" | "warning" | "info" | "danger" }[] = [
+  { id: "CLASSIFICAR", label: "Classificar", tone: "success" },
+  { id: "PENDENCIA", label: "Solicitar pendência", tone: "warning" },
+  { id: "LISTA_ESPERA", label: "Lista de espera", tone: "info" },
+  { id: "INDEFERIR", label: "Indeferir", tone: "danger" },
 ];
+const toneVar = (t: string) => (t === "success" ? "green" : t === "warning" ? "amber" : t === "info" ? "blue" : "red");
 
-const sentDocs: { name: string; state: "approved" | "rejected" | "todo"; comment?: string }[] = [
-  { name: "RG do estudante", state: "approved" },
-  { name: "Holerites — últimos 3 meses", state: "approved" },
-  { name: "Comprovante de renda — abril", state: "rejected", comment: "Imagem ilegível" },
-  { name: "Declaração de IR 2025", state: "rejected", comment: "Páginas faltando" },
-  { name: "Extrato bancário (60 dias)", state: "approved" },
-  { name: "Comprovante de residência", state: "approved" },
-  { name: "CRLV do veículo", state: "approved" },
-  { name: "IPTU 2026", state: "todo" },
-];
-
-const decisions: [string, string, "success" | "warning" | "info" | "danger"][] = [
-  ["approve", "Classificar", "success"],
-  ["pending", "Solicitar pendência", "warning"],
-  ["waitlist", "Lista de espera", "info"],
-  ["deny", "Indeferir", "danger"],
-];
-
-const toneVar = (tone: string) =>
-  tone === "success" ? "green" : tone === "warning" ? "amber" : tone === "info" ? "blue" : "red";
+function fmtMoney(v: string | null): string {
+  if (v == null) return "—";
+  const n = Number(v);
+  return Number.isNaN(n) ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function fmtWhen(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+function docVisual(status: DocumentStatusDb): { cls: string; tone: "success" | "warning" | "danger" | "neutral"; label: string } {
+  switch (status) {
+    case "APROVADO": return { cls: "has-file", tone: "success", label: "Aprovado" };
+    case "ENVIADO": return { cls: "has-pending", tone: "warning", label: "Enviado · em análise" };
+    case "REPROVADO": return { cls: "has-rejected", tone: "danger", label: "Reprovado" };
+    default: return { cls: "", tone: "neutral", label: "A enviar" };
+  }
+}
+const PROFILE: Record<string, { tone: "success" | "warning"; label: string }> = {
+  INTEGRAL: { tone: "success", label: "Integral elegível" },
+  PARCIAL: { tone: "warning", label: "Parcial elegível" },
+};
 
 export default function AnalysisPage() {
+  const { user } = useRequireStaff();
   const router = useRouter();
+  const qc = useQueryClient();
   const params = useParams<{ id: string }>();
-  const cand = CANDIDATES.find((c) => c.id === params.id) ?? CANDIDATES[0];
 
-  const [docTab, setDocTab] = useState("renda");
-  const [decision, setDecision] = useState("");
-  const [parecer, setParecer] = useState(
-    "Renda per capita declarada compatível com perfil PROUNI integral. Documentação majoritariamente legível.\n\nObservação: comprovante de renda do mês de abril ilegível — solicitado reenvio. Aguardando retorno do candidato."
-  );
+  const query = useQuery({
+    queryKey: ["admin", "application", params.id],
+    queryFn: () => adminApi.application(params.id),
+    enabled: !!user && !!params.id,
+  });
+  const analystsQuery = useQuery({ queryKey: ["admin", "analysts"], queryFn: () => adminApi.analysts(), enabled: !!user });
+  const d = query.data;
 
-  const summary: [string, ReactNode][] = [
-    ["Grupo familiar", "4 integrantes"],
-    ["Renda bruta declarada", <span className="mono" key="r">R$ 5.262,50</span>],
-    ["Outras rendas", <span className="mono" key="o">R$ 480,00</span>],
-    ["Despesas totais", <span className="mono" key="d">R$ 5.123,10</span>],
-    ["Renda per capita líquida", <span className="mono" key="p" style={{ color: "var(--green-700)", fontWeight: 600 }}>R$ 1.046,21</span>],
-    ["Perfil PROUNI", <Badge key="b" tone="success">Integral elegível</Badge>],
-  ];
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejectComment, setRejectComment] = useState("");
+  const [parecer, setParecer] = useState("");
+  const [decision, setDecision] = useState<AdminDecisionInput["decision"] | "">("");
+  const [kind, setKind] = useState<"INTEGRAL" | "PARCIAL" | "">("");
+  const [reason, setReason] = useState("");
+  const [viewer, setViewer] = useState<{ documentId: string; url: string; mime: string; fileName: string; status: DocumentStatusDb } | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const [grossIncome, setGrossIncome] = useState("");
+  const [incomeNote, setIncomeNote] = useState("");
+
+  // Ao trocar/abrir um documento, rola suavemente até o visualizador.
+  useEffect(() => {
+    if (viewer || viewerLoading) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [viewer?.documentId, viewerLoading]);
+
+  // Sincroniza o campo de renda apurada com o valor salvo (ao carregar/após salvar).
+  useEffect(() => {
+    setGrossIncome(query.data?.analystGrossIncome ?? "");
+    setIncomeNote(query.data?.analystIncomeNote ?? "");
+  }, [query.data?.analystGrossIncome, query.data?.analystIncomeNote]);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["admin", "application", params.id] });
+    qc.invalidateQueries({ queryKey: ["admin", "applications"] });
+  };
+
+  const reviewMut = useMutation({
+    mutationFn: (v: { documentId: string; decision: "APROVADO" | "REPROVADO"; comment?: string }) =>
+      adminApi.reviewDocument(v.documentId, { decision: v.decision, comment: v.comment }),
+    onSuccess: () => { invalidate(); setRejectId(null); setRejectComment(""); },
+  });
+  const assignMut = useMutation({
+    mutationFn: (analystId: string | null) => adminApi.assignAnalyst(params.id, analystId),
+    onSuccess: invalidate,
+  });
+  const decideMut = useMutation({
+    mutationFn: (body: AdminDecisionInput) => adminApi.decide(params.id, body),
+    onSuccess: () => { invalidate(); setParecer(""); setDecision(""); setKind(""); setReason(""); },
+  });
+  const startMut = useMutation({
+    mutationFn: () => adminApi.startAnalysis(params.id),
+    onSuccess: invalidate,
+  });
+  const incomeMut = useMutation({
+    mutationFn: () => adminApi.setIncome(params.id, { grossIncome: grossIncome.trim() || null, note: incomeNote.trim() || null }),
+    onSuccess: invalidate,
+  });
+
+  async function loadViewer(doc: AdminDocumentDto) {
+    if (!doc.documentId) return;
+    setViewerLoading(true);
+    try {
+      const { url, mime } = await adminApi.documentFile(doc.documentId);
+      setViewer((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { documentId: doc.documentId!, url, mime, fileName: doc.fileName ?? "documento", status: doc.status };
+      });
+    } catch {
+      alert("Não foi possível abrir o arquivo.");
+    } finally {
+      setViewerLoading(false);
+    }
+  }
+
+  if (query.isLoading || !user) {
+    return (
+      <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}>
+        <div className="content fade-in"><div className="card card-pad muted">Carregando inscrição…</div></div>
+      </AppShell>
+    );
+  }
+  if (query.isError || !d) {
+    return (
+      <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}>
+        <div className="content fade-in">
+          <button className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }} onClick={() => router.push("/admin/candidatos")}>
+            <IconChevL size={13} /> Voltar à fila
+          </button>
+          <Banner tone="warn" title="Inscrição não encontrada">Não foi possível carregar esta inscrição.</Banner>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
+  const busy = reviewMut.isPending || decideMut.isPending || assignMut.isPending;
 
   return (
-    <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", `Análise · ${cand.name}`]}>
+    <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", `Análise · ${d.name}`]}>
       <div className="content fade-in" style={{ maxWidth: "none", padding: 22 }}>
-        {/* Candidate header */}
+        {/* Cabeçalho */}
         <div className="card card-pad" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button className="btn btn-ghost btn-sm" onClick={() => router.push("/admin/candidatos")}>
               <IconChevL size={13} /> Voltar à fila
             </button>
-            <Avatar name={cand.name} size={42} />
+            <Avatar name={d.name} size={42} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "var(--ink-900)" }}>{cand.name}</h2>
-                <StatusBadge status={cand.status} />
-                <PriorityBadge priority={cand.priority} />
+                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "var(--ink-900)" }}>{d.name}</h2>
+                <StatusBadge status={d.status} />
+                <PriorityBadge priority={d.priority} />
+                {d.optsForQuota && <Badge tone="info" dot={false}>Optante por cotas</Badge>}
               </div>
               <div className="muted small" style={{ marginTop: 2 }}>
-                <span className="mono">{cand.id}</span> · CPF <span className="mono">{cand.cpf}</span> · {cand.course} · 1º ano · pré-seleção MEC 12/mai/2026
+                <span className="mono">{d.protocol}</span> · CPF <span className="mono">{d.cpf}</span> · {d.course}
+                {d.campus ? ` · ${d.campus}` : ""} · inscrição {fmtWhen(d.createdAt)}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-ghost"><IconHistory size={14} /> Histórico</button>
-              <button className="btn btn-ghost"><IconMessage size={14} /> Mensagem</button>
-              <button className="btn btn-ghost"><IconPrint size={14} /> Imprimir</button>
-            </div>
           </div>
-
           <div style={{ marginTop: 16 }}>
-            <Stepper steps={["Acesso", "Ficha", "Documentos", "Análise", "Resultado"]} current={3} />
+            <Stepper steps={["Acesso", "Ficha", "Documentos", "Análise", "Resultado"]} current={deriveStep(d)} />
           </div>
         </div>
 
-        {/* Split: document viewer + analysis panel */}
         <div className="split">
+          {/* Esquerda */}
           <div>
-            <div className="card" style={{ marginBottom: 14, padding: 0, overflow: "hidden" }}>
-              <div className="card-header" style={{ padding: 0 }}>
-                <div className="tabs" style={{ flex: 1, borderBottom: "none" }}>
-                  {docTabs.map(([id, l]) => (
-                    <button key={id} className={`tab ${docTab === id ? "active" : ""}`} onClick={() => setDocTab(id)}>{l}</button>
-                  ))}
+            {(viewer || viewerLoading) && (
+              <div ref={viewerRef} className="card" style={{ marginBottom: 14, padding: 0, overflow: "hidden", scrollMarginTop: 80 }}>
+                <div className="viewer">
+                  <div className="viewer-toolbar">
+                    {viewer && (
+                      <>
+                        <a className="btn btn-ghost btn-sm" href={viewer.url} target="_blank" rel="noopener noreferrer"><IconExternal size={13} /> Abrir em nova aba</a>
+                        <a className="btn btn-ghost btn-sm" href={viewer.url} download={viewer.fileName}><IconDownload size={13} /> Baixar</a>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { URL.revokeObjectURL(viewer.url); setViewer(null); }}><IconX size={13} /> Fechar</button>
+                      </>
+                    )}
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, color: "var(--ink-500)", fontSize: 12 }}>
+                      {viewer && <><span className="mono">{viewer.fileName}</span><Badge tone={docVisual(viewer.status).tone}>{docVisual(viewer.status).label}</Badge></>}
+                    </div>
+                  </div>
+                  <div className="viewer-body" style={{ padding: 0 }}>
+                    {viewerLoading ? (
+                      <div className="muted small" style={{ padding: 28 }}>Carregando documento…</div>
+                    ) : viewer && viewer.mime.startsWith("image/") ? (
+                      <img src={viewer.url} alt={viewer.fileName} style={{ maxWidth: "100%", maxHeight: 600, objectFit: "contain" }} />
+                    ) : viewer ? (
+                      <iframe src={viewer.url} title={viewer.fileName} style={{ width: "100%", height: 600, border: "none", background: "#fff" }} />
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <div className="viewer">
-                <div className="viewer-toolbar">
-                  <button className="btn btn-ghost btn-sm"><IconZoom size={13} /></button>
-                  <button className="btn btn-ghost btn-sm"><IconDownload size={13} /></button>
-                  <button className="btn btn-ghost btn-sm"><IconExternal size={13} /> Abrir em nova aba</button>
-                  <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, color: "var(--ink-500)", fontSize: 12 }}>
-                    <span className="mono">comprovante_abril.pdf</span>
-                    <Badge tone="danger">Reprovado</Badge>
-                  </div>
-                </div>
-                <div className="viewer-body">
-                  <div className="viewer-doc">
-                    <div className="viewer-doc-head">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/maua-logo.png" alt="Mauá" style={{ height: 28, width: "auto" }} />
-                      <div>
-                        <div style={{ fontSize: 8, letterSpacing: "0.2em", color: "var(--ink-500)" }}>INSTITUTO MAUÁ DE TECNOLOGIA</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--navy-900)" }}>FICHA SOCIOECONÔMICA · 2026</div>
+            )}
+
+            <div className="card" style={{ marginBottom: 14 }}>
+              <div className="card-header">
+                <h3 className="h-card-title">Documentos enviados</h3>
+                <span className="muted small" style={{ marginLeft: "auto" }}>
+                  {d.docTotals.approved} aprovados · {d.docTotals.sent} enviados · {d.docTotals.required} exigidos
+                </span>
+              </div>
+              <div style={{ padding: 14 }}>
+                {d.documents.length === 0 ? (
+                  <div className="muted small">Nenhum documento enviado até o momento.</div>
+                ) : (
+                  d.documents.map((doc: AdminDocumentDto, i) => {
+                    const v = docVisual(doc.status);
+                    const hasFile = doc.status !== "A_ENVIAR" && !!doc.documentId;
+                    return (
+                      <div key={doc.documentId ?? `${doc.documentTypeId}-${i}`}>
+                        <div className={`upload-row ${v.cls}`} style={{ cursor: "default" }}>
+                          <div className="upload-icon">
+                            {doc.status === "APROVADO" ? <IconCheck size={17} stroke={2.4} /> : doc.status === "REPROVADO" ? <IconAlert size={16} /> : <IconUpload size={16} />}
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div className="upload-title">{doc.name}</div>
+                            <div className="upload-meta" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {doc.memberName ? <><IconUser size={11} /> {doc.memberName} · </> : null}
+                              {doc.category}{doc.fileName ? ` · ${doc.fileName}` : ""}
+                            </div>
+                            {doc.reviewComment && <div className="upload-meta error">{doc.reviewComment}</div>}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Badge tone={v.tone}>{v.label}</Badge>
+                            {hasFile && (
+                              <>
+                                <button className="btn btn-ghost btn-sm" disabled={viewerLoading} onClick={() => loadViewer(doc)}><IconEye size={13} /> Ver</button>
+                                <button className="btn btn-ghost btn-sm" disabled={busy || doc.status === "APROVADO"}
+                                  onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "APROVADO" })}>Aprovar</button>
+                                <button className="btn btn-ghost btn-sm" disabled={busy}
+                                  onClick={() => { setRejectId(doc.documentId!); setRejectComment(""); }}>Reprovar</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {rejectId === doc.documentId && (
+                          <div className="card-pad" style={{ background: "var(--ink-50)", borderRadius: 8, margin: "4px 0 10px", padding: 12 }}>
+                            <div className="field-label" style={{ marginBottom: 6 }}>Motivo da reprovação (vai para o candidato)</div>
+                            <textarea className="textarea" rows={2} value={rejectComment} onChange={(e) => setRejectComment(e.target.value)}
+                              placeholder="Ex.: imagem ilegível, documento incompleto…" />
+                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                              <button className="btn btn-secondary btn-sm" disabled={busy || !rejectComment.trim()}
+                                onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "REPROVADO", comment: rejectComment.trim() })}>
+                                Confirmar reprovação
+                              </button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => setRejectId(null)}><IconX size={12} /> Cancelar</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div style={{ marginTop: 14, padding: "5px 8px", background: "var(--ink-800)", color: "#fff", fontSize: 9, letterSpacing: "0.06em" }}>1. DADOS DO ESTUDANTE</div>
-                    <div className="viewer-doc-lines">
-                      <div /><div /><div /><div /><div /><div /><div /><div />
-                    </div>
-                    <div style={{ marginTop: 14, padding: "5px 8px", background: "var(--ink-800)", color: "#fff", fontSize: 9 }}>2. COMPOSIÇÃO FAMILIAR</div>
-                    <div className="viewer-doc-lines">
-                      <div /><div /><div /><div /><div />
-                    </div>
-                  </div>
-                </div>
+                    );
+                  })
+                )}
+                {reviewMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(reviewMut.error as Error).message}</p>}
               </div>
             </div>
 
             <div className="card">
               <div className="card-header">
-                <h3 className="h-card-title">Documentos enviados</h3>
-                <span className="muted small" style={{ marginLeft: "auto" }}>9 aprovados · 2 reprovados · 3 a enviar</span>
+                <h3 className="h-card-title">Grupo familiar</h3>
+                <span className="muted small" style={{ marginLeft: "auto" }}>{d.family.length} integrante(s)</span>
               </div>
               <div style={{ padding: 14 }}>
-                {sentDocs.map((d, i) => (
-                  <div key={i} className={`upload-row ${d.state === "approved" ? "has-file" : d.state === "rejected" ? "has-rejected" : ""}`}>
-                    <div className="upload-icon">
-                      {d.state === "approved" ? <IconCheck size={17} stroke={2.4} /> : d.state === "rejected" ? <IconAlert size={16} /> : <IconUpload size={16} />}
+                {d.family.length === 0 ? (
+                  <div className="muted small">Grupo familiar ainda não preenchido.</div>
+                ) : (
+                  d.family.map((m) => (
+                    <div key={m.id} className="upload-row" style={{ cursor: "default" }}>
+                      <div className="upload-icon"><IconUser size={16} /></div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="upload-title">{m.fullName} {m.isStudent && <span className="muted small">· estudante</span>}</div>
+                        <div className="upload-meta">
+                          {m.relationship}{m.age != null ? ` · ${m.age} anos` : ""}{m.occupation ? ` · ${m.occupation}` : ""}
+                          {m.incomeSituations.length > 0 ? ` · ${m.incomeSituations.join(", ")}` : ""}
+                        </div>
+                      </div>
+                      <span className="mono small" style={{ color: "var(--ink-700)" }}>{fmtMoney(m.grossIncome)}</span>
                     </div>
-                    <div>
-                      <div className="upload-title">{d.name}</div>
-                      {d.comment && <div className="upload-meta error">{d.comment}</div>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {d.state === "approved" && <Badge tone="success">Aprovado</Badge>}
-                      {d.state === "rejected" && <Badge tone="danger">Reprovado</Badge>}
-                      {d.state === "todo" && <Badge tone="neutral">Aguardando</Badge>}
-                      {d.state === "approved" && <button className="btn btn-ghost btn-sm">Reverter</button>}
-                      {d.state === "rejected" && <button className="btn btn-ghost btn-sm">Editar parecer</button>}
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
 
-          {/* Right: analysis panel */}
+          {/* Direita */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 80 }}>
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Resumo socioeconômico</h3></div>
+              <div className="card-header"><h3 className="h-card-title">Analista responsável</h3></div>
               <div className="card-body">
-                {summary.map(([l, v], i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: i ? "1px solid var(--ink-150)" : "none", fontSize: 13 }}>
-                    <span className="muted">{l}</span>
-                    <span style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
-                  </div>
-                ))}
+                <select className="input" value={analystsQuery.data?.find((a) => a.name === d.analyst)?.id ?? ""}
+                  disabled={busy}
+                  onChange={(e) => assignMut.mutate(e.target.value || null)}>
+                  <option value="">Não atribuído</option>
+                  {(analystsQuery.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                {assignMut.isError && <p className="upload-meta error" style={{ marginTop: 6 }}>{(assignMut.error as Error).message}</p>}
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Parecer do analista</h3></div>
+              <div className="card-header"><h3 className="h-card-title">Resumo socioeconômico</h3></div>
               <div className="card-body">
-                <textarea className="textarea" rows={5} value={parecer} onChange={(e) => setParecer(e.target.value)} />
-                <div className="muted small" style={{ marginTop: 6 }}>Visível apenas para equipe administrativa. Auditável no histórico.</div>
+                {[
+                  ["Grupo familiar", `${d.summary.membersCount} integrante(s)`],
+                  ["Renda bruta declarada", fmtMoney(d.summary.grossIncome)],
+                  ["Outras rendas", fmtMoney(d.summary.otherIncome)],
+                  ["Despesas totais", fmtMoney(d.summary.totalExpenses)],
+                  ["Renda per capita", fmtMoney(d.summary.perCapita)],
+                ].map(([l, v], i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: i ? "1px solid var(--ink-150)" : "none", fontSize: 13 }}>
+                    <span className="muted">{l}</span>
+                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13, alignItems: "center" }}>
+                  <span className="muted">Perfil PROUNI</span>
+                  {profile ? <Badge tone={profile.tone}>{profile.label}</Badge> : <span className="muted small">A calcular</span>}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header"><h3 className="h-card-title">Renda bruta apurada · uso interno</h3></div>
+              <div className="card-body">
+                <Banner tone="info" title="Visível apenas para a equipe">
+                  Renda bruta final apurada após a análise documental (ajustes, exclusão de rendimentos não computáveis). Nunca exibida ao candidato.
+                </Banner>
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label className="field-label">Renda bruta final (R$)</label>
+                  <input className="input" inputMode="decimal" placeholder="ex.: 3500.00" value={grossIncome} onChange={(e) => setGrossIncome(e.target.value)} />
+                </div>
+                {grossIncome.trim() && d.summary.membersCount > 0 && !Number.isNaN(Number(grossIncome.trim())) && (
+                  <div className="muted small" style={{ marginTop: 6 }}>
+                    Per capita apurada: <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{fmtMoney((Number(grossIncome.trim()) / d.summary.membersCount).toFixed(2))}</span>
+                    {" "}· automática {fmtMoney(d.summary.perCapita)}
+                  </div>
+                )}
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label className="field-label">Justificativa do ajuste</label>
+                  <textarea className="textarea" rows={3} value={incomeNote} onChange={(e) => setIncomeNote(e.target.value)} placeholder="Ex.: excluído rendimento eventual não computável; correção de holerite…" />
+                </div>
+                {incomeMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(incomeMut.error as Error).message}</p>}
+                {incomeMut.isSuccess && <p className="upload-meta" style={{ marginTop: 8, color: "var(--green-700)" }}>Renda apurada salva.</p>}
+                <button className="btn btn-secondary btn-block" style={{ marginTop: 10 }} disabled={incomeMut.isPending} onClick={() => incomeMut.mutate()}>
+                  {incomeMut.isPending ? "Salvando…" : "Salvar renda apurada"}
+                </button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header"><h3 className="h-card-title">Parecer e decisão</h3></div>
+              <div className="card-body">
+                {d.status === "enviada" && (
+                  <button className="btn btn-ghost btn-block" style={{ marginBottom: 12 }}
+                    disabled={busy || startMut.isPending}
+                    onClick={() => startMut.mutate()}>
+                    {startMut.isPending ? "Iniciando…" : "Iniciar análise"}
+                  </button>
+                )}
+                <textarea className="textarea" rows={5} value={parecer} onChange={(e) => setParecer(e.target.value)}
+                  placeholder="Parecer do analista…" />
+                <div className="muted small" style={{ marginTop: 6 }}>Visível apenas para a equipe. Auditável no histórico.</div>
 
                 <div style={{ marginTop: 14 }}>
-                  <div className="field-label" style={{ marginBottom: 6 }}>Decisão preliminar</div>
+                  <div className="field-label" style={{ marginBottom: 6 }}>Decisão</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {decisions.map(([id, l, tone]) => {
-                      const color = toneVar(tone);
-                      const on = decision === id;
+                    {DECISIONS.map((dec) => {
+                      const c = toneVar(dec.tone);
+                      const on = decision === dec.id;
                       return (
-                        <button
-                          key={id}
-                          onClick={() => setDecision(id)}
-                          className="btn btn-ghost"
-                          style={{
-                            justifyContent: "center",
-                            borderColor: on ? `var(--${color}-600)` : undefined,
-                            background: on ? `var(--${color}-100)` : undefined,
-                            color: on ? `var(--${color}-700)` : undefined,
-                            fontWeight: on ? 600 : 500,
-                          }}
-                        >
-                          {l}
+                        <button key={dec.id} className="btn btn-ghost" onClick={() => setDecision(dec.id)}
+                          style={{ justifyContent: "center", borderColor: on ? `var(--${c}-600)` : undefined, background: on ? `var(--${c}-100)` : undefined, color: on ? `var(--${c}-700)` : undefined, fontWeight: on ? 600 : 500 }}>
+                          {dec.label}
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                <button className="btn btn-primary btn-block" style={{ marginTop: 12 }} disabled={!decision}>
-                  <IconCheck size={14} /> Encaminhar para homologação
+                {decision === "CLASSIFICAR" && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="field-label" style={{ marginBottom: 6 }}>Tipo de bolsa</div>
+                    {/* Processo 2026/2: somente bolsa integral (faixa parcial desabilitada). */}
+                    <select className="input" value={kind} onChange={(e) => setKind(e.target.value as "INTEGRAL" | "PARCIAL" | "")}>
+                      <option value="">Selecione…</option>
+                      <option value="INTEGRAL">Integral</option>
+                    </select>
+                    {kind === "INTEGRAL" && d.summary.profile !== "INTEGRAL" && (
+                      <div className="upload-meta error" style={{ marginTop: 8 }}>
+                        ⚠ A renda per capita apurada ({fmtMoney(d.summary.perCapita)}) está acima do teto para bolsa integral (1,5 salário mínimo). Confirme antes de classificar.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(decision === "PENDENCIA" || decision === "INDEFERIR") && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="field-label" style={{ marginBottom: 6 }}>Motivo {decision === "INDEFERIR" ? "do indeferimento" : "da pendência"} <span style={{ color: "var(--red-600)" }}>*</span></div>
+                    <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+                      <option value="">Selecione o motivo…</option>
+                      {DECISION_REASONS[decision].map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {decideMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(decideMut.error as Error).message}</p>}
+                {decideMut.isSuccess && <p className="upload-meta" style={{ marginTop: 10, color: "var(--green-700)" }}>Decisão registrada.</p>}
+
+                <button className="btn btn-primary btn-block" style={{ marginTop: 12 }}
+                  disabled={busy || !decision || !parecer.trim() || ((decision === "PENDENCIA" || decision === "INDEFERIR") && !reason)}
+                  onClick={() => decision && decideMut.mutate({ parecer: parecer.trim(), decision, scholarshipKind: kind || null, reasonCode: reason || null, isFinal: true })}>
+                  <IconCheck size={14} /> {decideMut.isPending ? "Registrando…" : "Registrar decisão"}
                 </button>
               </div>
             </div>
@@ -224,15 +443,14 @@ export default function AnalysisPage() {
             <div className="card">
               <div className="card-header"><h3 className="h-card-title">Histórico</h3></div>
               <div className="card-body">
-                <Timeline
-                  items={[
-                    { state: "done", title: "Inscrição recebida do MEC", meta: "12/mai · 10:22" },
-                    { state: "done", title: "Ficha enviada pela candidata", meta: "20/mai · 18:47" },
-                    { state: "done", title: "Triagem documental concluída", meta: "Carlos M. · 21/mai · 09:11" },
-                    { state: "warn", title: "2 documentos reprovados", meta: "Ana L. · 26/mai · 14:08" },
-                    { state: "active", title: "Análise socioeconômica em curso", meta: "Ana L. · agora" },
-                  ]}
-                />
+                {d.events.length === 0 ? (
+                  <div className="muted small">Sem eventos registrados.</div>
+                ) : (
+                  <Timeline items={d.events.map((e, i) => ({
+                    state: i === d.events.length - 1 ? "active" : "done",
+                    title: e.title, meta: fmtWhen(e.createdAt), body: e.body ?? undefined,
+                  }))} />
+                )}
               </div>
             </div>
           </div>

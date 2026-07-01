@@ -92,20 +92,19 @@ export default function VerifyEmailPage() {
     if (e.key === "Backspace" && !code[i] && i > 0) cellRefs.current[i - 1]?.focus();
   };
 
-  const onCellPaste = (i: number, e: React.ClipboardEvent<HTMLInputElement>) => {
-    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!digits) return;
+  const onCellPaste = (startIdx: number, e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "");
+    if (!digits) return;
     setCode((prev) => {
       const next = [...prev];
-      for (let j = 0; j < digits.length; j++) {
-        if (i + j < 6) next[i + j] = digits[j];
+      for (let i = 0; i < digits.length && startIdx + i < 6; i++) {
+        next[startIdx + i] = digits[i];
       }
       return next;
     });
-    const lastFilled = Math.min(i + digits.length - 1, 5);
-    const focusTarget = lastFilled < 5 ? lastFilled + 1 : 5;
-    setTimeout(() => cellRefs.current[focusTarget]?.focus(), 0);
+    const nextFocus = Math.min(startIdx + digits.length, 5);
+    setTimeout(() => cellRefs.current[nextFocus]?.focus(), 0);
   };
 
   return (
@@ -153,6 +152,7 @@ export default function VerifyEmailPage() {
                 className="input"
                 type="email"
                 placeholder="voce@exemplo.com"
+                maxLength={120}
                 value={email}
                 readOnly={phase === "code"}
                 onChange={(e) => setEmail(e.target.value)}

@@ -61,6 +61,8 @@ export function StepEstudante({ appId }: { appId: string | null }) {
   const { loading, form, setForm, save } = useSocioForm(appId);
   const app = useQuery({ queryKey: ["app-me"], queryFn: () => applicationsApi.me(), enabled: !!appId });
   const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  // Placeholder do ano/semestre vem do ciclo ativo (ex.: "2026/2"); muda sozinho a cada ciclo.
+  const yearTermPlaceholder = app.data?.cycle?.label ?? "2026/2";
 
   if (loading) return <p className="muted">Carregando…</p>;
   return (
@@ -81,7 +83,7 @@ export function StepEstudante({ appId }: { appId: string | null }) {
           <label className="field-label">Ano / semestre que cursará</label>
           <input
             className="input"
-            placeholder="2026 / 1"
+            placeholder={yearTermPlaceholder}
             maxLength={12}
             defaultValue={form.yearTerm ?? ""}
             onBlur={(e) => { set("yearTerm", e.target.value); save({ yearTerm: e.target.value }); }}
@@ -115,6 +117,16 @@ export function StepEstudante({ appId }: { appId: string | null }) {
 
 /* ============ Passo: Moradia e bens ============ */
 
+const BRAZIL_STATES: Array<[string, string]> = [
+  ["AC", "Acre"], ["AL", "Alagoas"], ["AP", "Amapá"], ["AM", "Amazonas"],
+  ["BA", "Bahia"], ["CE", "Ceará"], ["DF", "Distrito Federal"], ["ES", "Espírito Santo"],
+  ["GO", "Goiás"], ["MA", "Maranhão"], ["MT", "Mato Grosso"], ["MS", "Mato Grosso do Sul"],
+  ["PA", "Pará"], ["PB", "Paraíba"], ["PR", "Paraná"], ["PE", "Pernambuco"],
+  ["PI", "Piauí"], ["RJ", "Rio de Janeiro"], ["RN", "Rio Grande do Norte"],
+  ["RS", "Rio Grande do Sul"], ["RO", "Rondônia"], ["RR", "Roraima"],
+  ["SC", "Santa Catarina"], ["SP", "São Paulo"], ["SE", "Sergipe"], ["TO", "Tocantins"],
+];
+
 const TENURES: [string, string, string][] = [
   ["PROPRIO", "Próprio", "IPTU 2026"],
   ["ALUGADO", "Alugado", "Contrato + recibo"],
@@ -123,41 +135,53 @@ const TENURES: [string, string, string][] = [
   ["IRREGULAR", "Irregular", "Declaração do morador"],
 ];
 
-const BRAZIL_STATES = [
-  "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN","RO","RR","RS","SC","SE","SP","TO",
-];
-
 export function StepMoradia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
   const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null, cededBy: null };
-  const [cepLoading, setCepLoading] = useState(false);
 
-  const lookupCep = async (cep: string) => {
+  // Controlled state for CEP-autofillable address fields
+  const [cepZip, setCepZip] = useState("");
+  const [cepStreet, setCepStreet] = useState("");
+  const [cepNeighborhood, setCepNeighborhood] = useState("");
+  const [cepCity, setCepCity] = useState("");
+  const [cepState, setCepState] = useState("");
+  const [addrSeeded, setAddrSeeded] = useState(false);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
+
+  useEffect(() => {
+    if (!loading && !addrSeeded) {
+      setCepZip(form.zipCode ?? "");
+      setCepStreet(form.addressStreet ?? "");
+      setCepNeighborhood(form.neighborhood ?? "");
+      setCepCity(form.city ?? "");
+      setCepState(form.state ?? "");
+      setAddrSeeded(true);
+    }
+  }, [loading, addrSeeded, form]);
+
+  const fetchCep = async (cep: string) => {
     const digits = cep.replace(/\D/g, "");
     if (digits.length !== 8) return;
-    setCepLoading(true);
     try {
       const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
       if (!res.ok) return;
       const data = await res.json() as { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string };
       if (data.erro) return;
-      const patch: Partial<Form> = {};
-      if (data.logradouro) patch.addressStreet = data.logradouro;
-      if (data.bairro) patch.neighborhood = data.bairro;
-      if (data.localidade) patch.city = data.localidade;
-      if (data.uf) patch.state = data.uf;
-      setField(patch);
-      save({ ...patch, zipCode: cep });
-    } catch {
-      /* ViaCEP indisponível — usuário preenche manualmente */
-    } finally {
-      setCepLoading(false);
-    }
+      const street = data.logradouro ?? "";
+      const neighborhood = data.bairro ?? "";
+      const city = data.localidade ?? "";
+      const state = data.uf ?? "";
+      setCepStreet(street);
+      setCepNeighborhood(neighborhood);
+      setCepCity(city);
+      setCepState(state);
+      setField({ addressStreet: street, neighborhood, city, state });
+      save({ addressStreet: street, neighborhood, city, state });
+    } catch { /* ViaCEP indisponível — usuário preenche manualmente */ }
   };
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
 
   const saveVehicle = (next: Partial<typeof veh>) => {
     const merged = { ...veh, ...next };
@@ -180,48 +204,81 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
 
       <h3 className="section-title" style={{ marginTop: 18 }}><IconHouse size={15} /> Endereço</h3>
       <div className="form-grid">
+        {/* Linha 1: CEP primeiro → auto-preenche rua/bairro/cidade/estado */}
         <div className="field col-3">
-          <label className="field-label">CEP<span className="req">*</span></label>
-          <div style={{ position: "relative" }}>
-            <input
-              className="input"
-              inputMode="numeric"
-              maxLength={9}
-              defaultValue={form.zipCode ?? ""}
-              placeholder="00000-000"
-              onChange={(e) => { e.target.value = maskCep(e.target.value); }}
-              onBlur={(e) => {
-                setField({ zipCode: e.target.value });
-                save({ zipCode: e.target.value });
-                void lookupCep(e.target.value);
-              }}
-            />
-            {cepLoading && (
-              <span className="muted small" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)" }}>…</span>
-            )}
-          </div>
-          <span className="field-help">Preencha o CEP para completar o endereço automaticamente.</span>
+          <label className="field-label">CEP</label>
+          <input
+            className="input"
+            inputMode="numeric"
+            maxLength={9}
+            placeholder="00000-000"
+            value={cepZip}
+            onChange={(e) => setCepZip(maskCep(e.target.value))}
+            onBlur={(e) => {
+              setField({ zipCode: e.target.value });
+              save({ zipCode: e.target.value });
+              void fetchCep(e.target.value);
+            }}
+          />
+          <span className="field-help">Digite o CEP para preencher o endereço.</span>
         </div>
-        <div className="field col-7"><label className="field-label">Rua / Avenida</label><input key={form.addressStreet} className="input" maxLength={150} defaultValue={form.addressStreet ?? ""} onBlur={(e) => { setField({ addressStreet: e.target.value }); save({ addressStreet: e.target.value }); }} /></div>
-        <div className="field col-2"><label className="field-label">Número</label><input className="input" inputMode="numeric" maxLength={10} defaultValue={form.addressNumber ?? ""} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Bairro</label><input key={form.neighborhood} className="input" maxLength={80} defaultValue={form.neighborhood ?? ""} onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Cidade</label><input key={form.city} className="input" maxLength={100} defaultValue={form.city ?? ""} onBlur={(e) => { setField({ city: e.target.value }); save({ city: e.target.value }); }} /></div>
+        <div className="field col-7">
+          <label className="field-label">Rua / Avenida</label>
+          <input
+            className="input"
+            maxLength={150}
+            value={cepStreet}
+            onChange={(e) => setCepStreet(e.target.value)}
+            onBlur={(e) => { setField({ addressStreet: e.target.value }); save({ addressStreet: e.target.value }); }}
+          />
+        </div>
+        <div className="field col-2">
+          <label className="field-label">Número</label>
+          <input className="input" inputMode="numeric" maxLength={10} defaultValue={form.addressNumber ?? ""} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} />
+        </div>
+        {/* Linha 2: Complemento, Bairro, Cidade, Estado */}
+        <div className="field col-3">
+          <label className="field-label">Complemento <span className="muted small">(opcional)</span></label>
+          <input className="input" maxLength={60} placeholder="Apto, bloco, casa…" defaultValue={form.addressUnit ?? ""} onBlur={(e) => { setField({ addressUnit: e.target.value }); save({ addressUnit: e.target.value }); }} />
+        </div>
+        <div className="field col-4">
+          <label className="field-label">Bairro</label>
+          <input
+            className="input"
+            maxLength={80}
+            value={cepNeighborhood}
+            onChange={(e) => setCepNeighborhood(e.target.value)}
+            onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }}
+          />
+        </div>
+        <div className="field col-3">
+          <label className="field-label">Cidade</label>
+          <input
+            className="input"
+            maxLength={80}
+            value={cepCity}
+            onChange={(e) => setCepCity(e.target.value)}
+            onBlur={(e) => { setField({ city: e.target.value }); save({ city: e.target.value }); }}
+          />
+        </div>
         <div className="field col-2">
           <label className="field-label">Estado</label>
           <select
-            key={form.state}
             className="select"
-            defaultValue={form.state ?? ""}
-            onChange={(e) => { setField({ state: e.target.value }); save({ state: e.target.value }); }}
+            value={cepState}
+            onChange={(e) => {
+              setCepState(e.target.value);
+              setField({ state: e.target.value });
+              save({ state: e.target.value });
+            }}
           >
             <option value="">—</option>
-            {BRAZIL_STATES.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+            {BRAZIL_STATES.map(([abbr, name]) => (
+              <option key={abbr} value={abbr}>{abbr} — {name}</option>
+            ))}
           </select>
         </div>
-        <div className="field col-2">
-          <label className="field-label">Complemento <span className="muted small">(opcional)</span></label>
-          <input className="input" maxLength={40} defaultValue={form.addressUnit ?? ""} placeholder="Apto, bloco, sala…" onBlur={(e) => { setField({ addressUnit: e.target.value }); save({ addressUnit: e.target.value }); }} />
-        </div>
+        {/* Linha 3 */}
         <div className="field col-12"><label className="field-label">Ponto de referência</label><input className="input" maxLength={200} defaultValue={form.reference ?? ""} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
         <div className="field col-4"><label className="field-label">Telefone fixo</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.landline ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
         <div className="field col-4"><label className="field-label">Celular do estudante</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.studentMobile ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ studentMobile: e.target.value }); save({ studentMobile: e.target.value }); }} /></div>

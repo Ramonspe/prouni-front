@@ -21,6 +21,13 @@ import type {
   ApplicationEventDto,
   CampusDto,
   CourseDto,
+  CatalogCourseDto,
+  CatalogCategoryDto,
+  CatalogDocTypeDto,
+  CourseUpsertInput,
+  DocCategoryUpsertInput,
+  DocTypeUpsertInput,
+  CycleDto,
   DocumentCategoryDto,
   FamilyMemberDto,
   FamilyMemberInput,
@@ -267,7 +274,7 @@ export const authApi = {
 
 /** Catálogo do ciclo ativo (público). */
 export const cyclesApi = {
-  active: () => apiFetch("/cycles/active", { auth: false, retry: false }),
+  active: () => apiFetch<CycleDto>("/cycles/active", { auth: false, retry: false }),
   /** Matriz documental completa vigente, agrupada por categoria. */
   documentTypes: () =>
     apiFetch<{ categories: DocumentCategoryDto[] }>("/cycles/active/document-types", { auth: false, retry: false }),
@@ -344,6 +351,8 @@ export const adminApi = {
     apiFetch<AdminApplicationDetail>(`/admin/documents/${documentId}/review`, { method: "POST", body }),
   assignAnalyst: (appId: string, analystId: string | null) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/analyst`, { method: "PATCH", body: { analystId } }),
+  startAnalysis: (appId: string) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/start-analysis`, { method: "POST" }),
   decide: (appId: string, body: AdminDecisionInput) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/decision`, { method: "POST", body }),
   setIncome: (appId: string, body: AdminIncomeInput) =>
@@ -387,6 +396,45 @@ export const usersApi = {
     apiFetch<UserDto>(`/admin/users/${id}`, { method: "PATCH", body }),
 };
 
+/**
+ * Catálogo (Operação → Cursos e Documentos): CRUD de cursos, categorias e tipos
+ * de documento — incluindo as condições que disparam cada documento. Disponível
+ * para ADMIN e ANALYST. O banco é a fonte da verdade da matriz documental.
+ */
+export const catalogApi = {
+  // Cursos
+  campuses: () => apiFetch<CampusDto[]>("/admin/catalog/campuses"),
+  courses: () => apiFetch<CatalogCourseDto[]>("/admin/catalog/courses"),
+  createCourse: (body: CourseUpsertInput) =>
+    apiFetch<CatalogCourseDto>("/admin/catalog/courses", { method: "POST", body }),
+  updateCourse: (id: string, body: CourseUpsertInput) =>
+    apiFetch<CatalogCourseDto>(`/admin/catalog/courses/${id}`, { method: "PATCH", body }),
+  deleteCourse: (id: string) =>
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/courses/${id}`, { method: "DELETE" }),
+
+  // Documentos
+  docCatalog: () => apiFetch<CatalogCategoryDto[]>("/admin/catalog/doc-catalog"),
+  createCategory: (body: DocCategoryUpsertInput) =>
+    apiFetch<CatalogCategoryDto>("/admin/catalog/categories", { method: "POST", body }),
+  updateCategory: (id: string, body: DocCategoryUpsertInput) =>
+    apiFetch<CatalogCategoryDto>(`/admin/catalog/categories/${id}`, { method: "PATCH", body }),
+  deleteCategory: (id: string) =>
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/categories/${id}`, { method: "DELETE" }),
+  createDocType: (body: DocTypeUpsertInput) =>
+    apiFetch<CatalogDocTypeDto>("/admin/catalog/doc-types", { method: "POST", body }),
+  updateDocType: (id: string, body: DocTypeUpsertInput) =>
+    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}`, { method: "PATCH", body }),
+  setDocTypeActive: (id: string, active: boolean) =>
+    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}/active`, { method: "PATCH", body: { active } }),
+  deleteDocType: (id: string) =>
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/doc-types/${id}`, { method: "DELETE" }),
+  uploadTemplate: (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}/template`, { method: "POST", body: fd });
+  },
+};
+
 /** Manutenção da base (Configurações → Manutenção): preview + limpeza. Restrito a ADMIN. */
 export const maintenanceApi = {
   summary: () => apiFetch<MaintenanceSummaryDto>("/admin/maintenance/summary"),
@@ -396,16 +444,6 @@ export const maintenanceApi = {
     apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", { method: "POST" }),
   syncCourses: () =>
     apiFetch<CourseSyncResult>("/admin/maintenance/sync-courses", { method: "POST" }),
-};
-
-/** Modelos de documentos (Operação → Modelos de documentos): ADMIN e ANALYST. */
-export const docTemplatesApi = {
-  /** Envia um novo arquivo de modelo para um tipo de documento. Retorna a URL pública do modelo. */
-  uploadTemplate: (typeId: string, file: File): Promise<{ templateUrl: string }> => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return apiFetch<{ templateUrl: string }>(`/admin/document-types/${typeId}/template`, { method: "POST", body: fd });
-  },
 };
 
 /** Ficha socioeconômica (autosave por seção + envio). */
