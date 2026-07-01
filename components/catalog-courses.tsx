@@ -113,7 +113,7 @@ export function CatalogCourses({ canEdit }: { canEdit: boolean }) {
           </div>
           <div className="card-body">
             {err && <Banner tone="danger" title="Verifique os campos">{err}</Banner>}
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: err ? 12 : 0 }}>
+            <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: err ? 12 : 0 }}>
               <div className="field">
                 <label className="field-label">Nome do curso</label>
                 <input
@@ -133,7 +133,7 @@ export function CatalogCourses({ canEdit }: { canEdit: boolean }) {
                 </select>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: 12 }}>
+            <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: 12 }}>
               <div className="field">
                 <label className="field-label">Turnos</label>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>

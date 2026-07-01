@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminApi, cyclesApi } from "@/lib/api";
 import { Avatar, MauaBrand } from "./ui";
@@ -16,6 +16,7 @@ import {
   IconHome,
   IconLayers,
   IconLogout,
+  IconMenu,
   IconSearch,
   IconSettings,
   IconShield,
@@ -122,7 +123,7 @@ function NavParentItem({ item, pathname }: { item: NavParent; pathname: string }
   );
 }
 
-function Sidebar({ role }: { role: Role }) {
+function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -147,7 +148,7 @@ function Sidebar({ role }: { role: Role }) {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${open ? "open" : ""}`}>
       <MauaBrand variant="dark" />
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -194,10 +195,13 @@ function Sidebar({ role }: { role: Role }) {
   );
 }
 
-function Topbar({ crumbs = [], role }: { crumbs?: string[]; role: Role }) {
+function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role; onBurger?: () => void }) {
   const router = useRouter();
   return (
     <header className="topbar">
+      <button className="topbar-burger icon-btn" aria-label="Abrir menu" onClick={onBurger}>
+        <IconMenu size={18} />
+      </button>
       <div style={{ display: "flex", alignItems: "center" }}>
         {crumbs.map((c, i) => (
           <Fragment key={i}>
@@ -239,11 +243,22 @@ export function AppShell({
   crumbs?: string[];
   children: ReactNode;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
+  // Fecha o drawer ao navegar (mobile).
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
   return (
     <div className="app-shell">
-      <Sidebar role={role} />
+      <Sidebar role={role} open={menuOpen} />
+      <div
+        className={`sidebar-overlay ${menuOpen ? "show" : ""}`}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden
+      />
       <div className="main">
-        <Topbar crumbs={crumbs} role={role} />
+        <Topbar crumbs={crumbs} role={role} onBurger={() => setMenuOpen(true)} />
         {children}
       </div>
     </div>

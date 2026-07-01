@@ -206,7 +206,7 @@ export function CatalogDocs({ canEdit }: { canEdit: boolean }) {
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header"><h3 className="h-card-title">{catForm.id ? "Editar categoria" : "Nova categoria"}</h3></div>
           <div className="card-body">
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+            <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
               <div className="field">
                 <label className="field-label">Título</label>
                 <input className="input" maxLength={120} value={catForm.title} onChange={(e) => setCatForm({ ...catForm, title: e.target.value })} placeholder="Ex.: 3. Renda e bens" />
@@ -240,7 +240,7 @@ export function CatalogDocs({ canEdit }: { canEdit: boolean }) {
               <input className="input" maxLength={400} value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} placeholder="Ex.: Certidão de propriedade de veículo (Detran)" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+            <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
               <div className="field">
                 <label className="field-label">Categoria</label>
                 <select className="input" value={typeForm.categoryId} onChange={(e) => setTypeForm({ ...typeForm, categoryId: e.target.value })}>

@@ -72,7 +72,7 @@ export function StepEstudante({ appId }: { appId: string | null }) {
         Nome, CPF e curso já vieram das etapas anteriores. Complete os dados acadêmicos abaixo.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 16 }}>
+      <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 16 }}>
         <div className="stat"><div className="stat-label">Curso</div><div style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.course?.name ?? "—"}</div></div>
         <div className="stat"><div className="stat-label">Campus</div><div style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.course?.campus.name ?? "—"}</div></div>
         <div className="stat"><div className="stat-label">Protocolo</div><div className="mono" style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.protocol ?? "—"}</div></div>
@@ -304,7 +304,7 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         Posse do imóvel<span className="req">*</span>{" "}
         <span className="muted small" style={{ fontWeight: 400 }}>(define os documentos do imóvel)</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+      <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
         {TENURES.map(([val, label, hint]) => (
           <label key={val} className="radio" style={{ flexDirection: "column", alignItems: "flex-start", padding: "10px 12px", border: "1px solid var(--ink-200)", borderRadius: 8 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -508,7 +508,7 @@ export function StepRevisao({ appId, onReadyChange }: { appId: string | null; on
       <p className="signup-sub">Confira o resumo e aceite a declaração para concluir a inscrição.</p>
 
       {s && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 18 }}>
+        <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 18 }}>
           <div className="stat"><div className="stat-label">Renda bruta familiar</div><div className="stat-value mono" style={{ fontSize: 20 }}>R$ {s.totalIncome}</div></div>
           <div className="stat"><div className="stat-label">Despesas mensais</div><div className="stat-value mono" style={{ fontSize: 20 }}>R$ {s.totalExpenses}</div></div>
           <div className="stat"><div className="stat-label">Renda per capita</div><div className="stat-value mono" style={{ fontSize: 20 }}>R$ {s.perCapita}</div><div className="muted small">{s.membersCount} integrante(s)</div></div>

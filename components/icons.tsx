@@ -67,5 +67,6 @@ export const IconZoom = (p: IconProps) => <Icon {...p} d={<><circle cx="11" cy="
 export const IconPrint = (p: IconProps) => <Icon {...p} d={<><path d="M6 9V3h12v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M6 17h12v4H6z" /></>} />;
 export const IconLayers = (p: IconProps) => <Icon {...p} d={<><path d="m12 2 10 5-10 5L2 7z" /><path d="m2 12 10 5 10-5" /><path d="m2 17 10 5 10-5" /></>} />;
 export const IconList = (p: IconProps) => <Icon {...p} d={<><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" /></>} />;
+export const IconMenu = (p: IconProps) => <Icon {...p} d={<><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>} />;
 
 export type IconComponent = (p: IconProps) => ReactElement;

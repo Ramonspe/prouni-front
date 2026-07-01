@@ -387,7 +387,7 @@ export default function AnalysisPage() {
 
                 <div style={{ marginTop: 14 }}>
                   <div className="field-label" style={{ marginBottom: 6 }}>Decisão</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {DECISIONS.map((dec) => {
                       const c = toneVar(dec.tone);
                       const on = decision === dec.id;

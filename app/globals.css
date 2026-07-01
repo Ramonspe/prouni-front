@@ -1646,3 +1646,150 @@ a { color: var(--blue-700); text-decoration: none; }
   justify-content: center;
   gap: 8px;
 }
+
+/* =====================================================================
+   RESPONSIVIDADE (mobile-first overrides)
+   Desktop permanece idêntico. Abaixo de 1024px a navegação vira drawer e
+   os layouts de 2+ colunas empilham; abaixo de 640px afinam paddings,
+   tipografia e grids. O !important nos .rgrid vence os estilos inline
+   (grids definidos direto no componente) apenas dentro do media query.
+   ===================================================================== */
+
+/* Proteções globais contra overflow horizontal */
+img, svg, video, canvas { max-width: 100%; }
+
+/* Hambúrguer e overlay do drawer: escondidos no desktop */
+.topbar-burger { display: none; }
+.sidebar-overlay { display: none; }
+
+/* -------- Tablet e abaixo (drawer + empilhamento de shells) -------- */
+@media (max-width: 1024px) {
+  /* App shell: sidebar vira drawer off-canvas */
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 264px;
+    height: 100vh;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+    overflow-y: auto;
+  }
+  .sidebar.open { transform: none; box-shadow: 0 0 48px rgba(0,0,0,0.45); }
+  .sidebar-overlay {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(3, 10, 24, 0.5);
+    z-index: 55;
+    opacity: 0; pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+  .sidebar-overlay.show { opacity: 1; pointer-events: auto; }
+  .topbar-burger {
+    display: grid; place-items: center;
+    width: 34px; height: 34px; flex-shrink: 0;
+  }
+
+  /* Login: esconde o painel de arte, formulário ocupa tudo */
+  .login-shell { grid-template-columns: 1fr; }
+  .login-art { display: none; }
+  .login-form-wrap { padding: 32px 20px; }
+
+  /* Cadastro/verify: esconde o trilho lateral de etapas */
+  .signup-body { grid-template-columns: 1fr; }
+  .signup-side { display: none; }
+  .signup-main { padding: 24px 20px 96px; }
+  .signup-grid { grid-template-columns: 1fr; gap: 18px; }
+  .signup-footer { margin: 20px -20px -24px; padding: 12px 20px; }
+
+  /* Verify (dentro do signup): empilha os dois cartões */
+  .verify-grid { grid-template-columns: 1fr; }
+
+  /* Landing: empilha herói + CTA */
+  .welcome-grid { grid-template-columns: 1fr; }
+  .welcome-hero { padding: 40px 28px; }
+  .welcome-title { font-size: 40px; }
+  .welcome-cta { padding: 32px 28px; }
+
+  /* Split do analista */
+  .split { grid-template-columns: 1fr; }
+  .viewer { min-height: 420px; }
+
+  /* Grids utilitários reduzem densidade */
+  .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+
+  /* Content e topbar com respiro menor */
+  .content { padding: 22px 18px; }
+  .topbar { padding: 12px 16px; }
+}
+
+/* -------- Celular -------- */
+@media (max-width: 640px) {
+  body { font-size: 13.5px; }
+
+  /* Grids inline (via classe .rgrid) e utilitários empilham */
+  .rgrid { grid-template-columns: 1fr !important; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+
+  /* Form de 12 colunas: todo campo ocupa a linha inteira */
+  .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .col-1, .col-2, .col-3, .col-4, .col-5, .col-6,
+  .col-7, .col-8, .col-9, .col-10, .col-12 { grid-column: 1 / -1; }
+
+  /* Pickers de campus/curso e cartões de membro empilham */
+  .campus-grid { grid-template-columns: 1fr; }
+  .curso-list { grid-template-columns: 1fr; }
+  .membro-card { grid-template-columns: 1fr; gap: 10px; }
+  .membro-docs { text-align: left; }
+
+  /* Editor de família (8 colunas): rola horizontalmente sem estourar a tela */
+  .family-table { overflow-x: auto; }
+  .family-table-head, .family-table-row { min-width: 680px; }
+
+  /* Tabelas densas: rolagem horizontal dentro do cartão */
+  .card-body, .content { overflow-x: auto; }
+  .table { min-width: 560px; }
+
+  /* Content/topbar/headers mais compactos */
+  .content { padding: 16px 14px; }
+  .topbar { padding: 10px 14px; gap: 10px; }
+  .search-input { display: none; }
+  .profile-switch { display: none; }
+  .page-title { font-size: 19px; }
+
+  /* Landing: tipografia e header */
+  .welcome-header { flex-wrap: wrap; gap: 8px 14px; padding: 14px 16px; }
+  .welcome-title { font-size: 32px; }
+  .welcome-sub { font-size: 14.5px; }
+  .welcome-hero { padding: 28px 18px; }
+  .welcome-cta { padding: 24px 18px; }
+  .welcome-footer { flex-direction: column; gap: 4px; padding: 14px 16px; }
+  .welcome-footer span { margin-left: 0 !important; }
+
+  /* Login */
+  .login-title { font-size: 24px; }
+  .login-form-wrap { padding: 28px 16px; }
+
+  /* Cadastro: cabeçalho e footer */
+  .signup-header { flex-wrap: wrap; row-gap: 8px; padding: 12px 16px; }
+  .signup-header-progress { display: none !important; }
+  .signup-main { padding: 20px 16px 92px; }
+  .signup-footer { flex-wrap: wrap; gap: 10px; margin: 20px -16px -20px; padding: 12px 16px; }
+  .signup-footer > div:last-child { flex-wrap: wrap; }
+  .signup-title { font-size: 22px; }
+
+  /* Verify: token e progresso */
+  .verify-progress { display: none; }
+  .verify-card { padding: 22px 18px; }
+  .token-inputs { gap: 7px; }
+  .token-cell { height: 48px; font-size: 18px; }
+
+  /* Vaga card empilha e tira a borda lateral da modalidade */
+  .vaga-card { flex-direction: column; }
+  .vaga-modalidade { text-align: left; padding-left: 0; border-left: none; border-top: 1px dashed var(--ink-200); padding-top: 12px; margin-top: 12px; }
+  .vaga-foot { flex-wrap: wrap; gap: 16px 24px; }
+
+  /* Docs summary empilha */
+  .docs-summary { flex-wrap: wrap; gap: 12px 20px; }
+}

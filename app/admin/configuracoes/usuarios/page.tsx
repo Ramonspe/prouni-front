@@ -120,7 +120,7 @@ export default function UsuariosPage() {
                   <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={resetForm}><IconX size={14} /></button>
                 </div>
                 <div className="card-body">
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                  <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
                     <div className="field">
                       <label className="field-label">Nome completo<span className="req">*</span></label>
                       <input className="input" maxLength={120} value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} />

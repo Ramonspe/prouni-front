@@ -419,6 +419,7 @@ export default function DocumentosPage() {
             ))}
 
             <div
+              className="rgrid"
               style={{
                 marginTop: 18,
                 display: "grid",
