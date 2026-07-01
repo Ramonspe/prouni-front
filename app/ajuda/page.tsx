@@ -65,7 +65,7 @@ export default function AjudaPage() {
         </div>
 
         {/* Atalhos rápidos */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
+        <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
           {[
             { href: "/ficha", icon: IconFile, label: "Ficha socioeconômica" },
             { href: "/documentos", icon: IconUpload, label: "Enviar documentos" },

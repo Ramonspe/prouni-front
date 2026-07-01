@@ -434,7 +434,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
         os maiores de 18 anos — comprovantes de renda. As alterações são salvas automaticamente.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 18 }}>
+      <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 18 }}>
         <div className="stat">
           <div className="stat-label">Integrantes</div>
           <div className="stat-value">{list.length}</div>
@@ -883,7 +883,7 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
             </div>
             <div className="muted small">Anote esse número. Ele será usado em todas as consultas e contatos.</div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", borderTop: "1px solid var(--ink-200)" }}>
+          <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", borderTop: "1px solid var(--ink-200)" }}>
             {[
               ["Curso", app?.course?.name ?? "A confirmar"],
               ["Campus", app?.course?.campus.name ?? "—"],

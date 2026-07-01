@@ -205,7 +205,7 @@ export default function PainelPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                 <div className="card">
                   <div className="card-header"><h3 className="h-card-title">Atalhos</h3></div>
-                  <div className="card-body" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div className="card-body rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <Link href="/ficha" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconFile size={15} /> Retomar ficha</Link>
                     <Link href="/documentos" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconUpload size={15} /> Enviar documento</Link>
                     <Link href="/acompanhamento" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconClock size={15} /> Ver status detalhado</Link>

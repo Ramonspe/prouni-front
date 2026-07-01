@@ -48,12 +48,14 @@ export function SignupShell({
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <span className="muted small">
-            Etapa {currentIdx + 1} de {SIGNUP_STEPS.length}
-          </span>
-          <div style={{ width: 140 }}>
-            <div className="progress-bar">
-              <div style={{ width: `${((currentIdx + 1) / SIGNUP_STEPS.length) * 100}%` }} />
+          <div className="signup-header-progress" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="muted small">
+              Etapa {currentIdx + 1} de {SIGNUP_STEPS.length}
+            </span>
+            <div style={{ width: 140 }}>
+              <div className="progress-bar">
+                <div style={{ width: `${((currentIdx + 1) / SIGNUP_STEPS.length) * 100}%` }} />
+              </div>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => setShowHelp((v) => !v)}>

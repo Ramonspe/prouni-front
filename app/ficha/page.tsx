@@ -55,7 +55,7 @@ export default function FichaPage() {
             </div>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 22, marginTop: 18 }}>
+          <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 22, marginTop: 18 }}>
             <aside style={{ position: "sticky", top: 80, alignSelf: "start" }}>
               <div className="card" style={{ padding: 8 }}>
                 {SECTIONS.map((s) => {
