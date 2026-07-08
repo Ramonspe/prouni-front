@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { Banner } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
-import { maintenanceApi } from "@/lib/api";
+import { adminApi, maintenanceApi } from "@/lib/api";
 import { RESET_CONFIRMATION, type MaintenanceSummaryDto } from "@prouni/shared";
 
 /** Rótulos pt-BR de cada contagem da base. */
@@ -55,6 +55,10 @@ export default function ManutencaoPage() {
     mutationFn: () => maintenanceApi.syncCourses(),
   });
 
+  const pingMut = useMutation({
+    mutationFn: () => adminApi.pingRm(),
+  });
+
   const canReset = phrase.trim() === RESET_CONFIRMATION && !resetMut.isPending;
   const total = summary.data
     ? LABELS.reduce((acc, { key }) => acc + (summary.data?.[key] ?? 0), 0)
@@ -91,8 +95,37 @@ export default function ManutencaoPage() {
               feitas por lá. Use só para recriar a base inicial ou desfazer alterações.
             </Banner>
 
-            {/* Cursos e campi — restaurar padrão */}
+            {/* Integração RM — testar a rota de rede AWS→RM */}
             <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+              <div className="card-header"><h3 className="h-card-title">Integração RM — testar conexão</h3></div>
+              <div className="card-body">
+                <p className="muted small" style={{ marginBottom: 10 }}>
+                  Verifica se este servidor <strong>alcança</strong> o TOTVS RM (um GET no WSDL, sem enviar dados
+                  nem alterar nada). Use para confirmar a rota de rede antes de exportar candidatos.
+                </p>
+                {pingMut.isSuccess && (
+                  pingMut.data.ok ? (
+                    <Banner tone="success" title="RM alcançável ✓">
+                      <span className="mono">{pingMut.data.target}</span> · HTTP {pingMut.data.httpStatus} · {pingMut.data.ms} ms
+                    </Banner>
+                  ) : (
+                    <Banner tone="danger" title="RM inacessível a partir deste servidor">
+                      <span className="mono">{pingMut.data.target}</span><br />
+                      {pingMut.data.error ?? `HTTP ${pingMut.data.httpStatus}`}
+                    </Banner>
+                  )
+                )}
+                {pingMut.isError && (
+                  <Banner tone="danger" title="Falha ao testar">{(pingMut.error as Error).message}</Banner>
+                )}
+                <button className="btn btn-secondary" style={{ marginTop: pingMut.isSuccess || pingMut.isError ? 10 : 0 }} disabled={pingMut.isPending} onClick={() => pingMut.mutate()}>
+                  {pingMut.isPending ? "Testando…" : "Testar conexão com o RM"}
+                </button>
+              </div>
+            </div>
+
+            {/* Cursos e campi — restaurar padrão */}
+            <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header"><h3 className="h-card-title">Cursos e campi — restaurar padrão</h3></div>
               <div className="card-body">
                 <p className="muted small" style={{ marginBottom: 10 }}>

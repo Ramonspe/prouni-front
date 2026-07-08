@@ -360,6 +360,9 @@ export const adminApi = {
   /** Exporta a inscrição (classificado) para o TOTVS RM e devolve o detalhe atualizado. */
   exportToRm: (appId: string) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, { method: "POST" }),
+  /** Diagnóstico read-only: o backend alcança o RM? (confirma a rota AWS→RM). */
+  pingRm: () =>
+    apiFetch<{ target: string; ok: boolean; httpStatus?: number; ms: number; error?: string }>("/admin/rm/ping"),
   /** Baixa o arquivo do documento (com Bearer) e devolve um object URL + mime para exibir inline. */
   documentFile: async (documentId: string): Promise<{ url: string; mime: string }> => {
     const res = await fetch(`${API_BASE}/admin/documents/${documentId}/file`, {
