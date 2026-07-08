@@ -670,4 +670,7 @@ export interface AdminApplicationDetail {
   documents: AdminDocumentDto[];
   docTotals: { required: number; sent: number; approved: number };
   events: ApplicationEventDto[];
+  /** Integração RM: nº da inscrição no RM (null = não exportado) e quando foi exportado. */
+  rmRegistration: string | null;
+  rmSyncedAt: string | null;
 }

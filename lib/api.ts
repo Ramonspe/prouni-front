@@ -357,6 +357,9 @@ export const adminApi = {
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/decision`, { method: "POST", body }),
   setIncome: (appId: string, body: AdminIncomeInput) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/income`, { method: "PATCH", body }),
+  /** Exporta a inscrição (classificado) para o TOTVS RM e devolve o detalhe atualizado. */
+  exportToRm: (appId: string) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, { method: "POST" }),
   /** Baixa o arquivo do documento (com Bearer) e devolve um object URL + mime para exibir inline. */
   documentFile: async (documentId: string): Promise<{ url: string; mime: string }> => {
     const res = await fetch(`${API_BASE}/admin/documents/${documentId}/file`, {

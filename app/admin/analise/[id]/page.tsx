@@ -113,6 +113,10 @@ export default function AnalysisPage() {
     mutationFn: () => adminApi.startAnalysis(params.id),
     onSuccess: invalidate,
   });
+  const exportRmMut = useMutation({
+    mutationFn: () => adminApi.exportToRm(params.id),
+    onSuccess: invalidate,
+  });
   const incomeMut = useMutation({
     mutationFn: () => adminApi.setIncome(params.id, { grossIncome: grossIncome.trim() || null, note: incomeNote.trim() || null }),
     onSuccess: invalidate,
@@ -439,6 +443,36 @@ export default function AnalysisPage() {
                 </button>
               </div>
             </div>
+
+            {(d.status === "classificado" || d.rmRegistration) && (
+              <div className="card">
+                <div className="card-header"><h3 className="h-card-title">Integração RM</h3></div>
+                <div className="card-body">
+                  {d.rmRegistration ? (
+                    <>
+                      <Banner tone="success" title="Exportado para o RM">
+                        Inscrição registrada no TOTVS RM.
+                      </Banner>
+                      <div className="muted small" style={{ marginTop: 8 }}>
+                        Registro: <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{d.rmRegistration}</span>
+                        {d.rmSyncedAt && <> · {fmtWhen(d.rmSyncedAt)}</>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="muted small" style={{ marginBottom: 10 }}>
+                        Envia esta inscrição ao TOTVS RM (cria o candidato no processo seletivo) e altera o status para <strong>Concedida</strong>.
+                      </p>
+                      {exportRmMut.isError && <p className="upload-meta error" style={{ marginBottom: 8 }}>{(exportRmMut.error as Error).message}</p>}
+                      <button className="btn btn-primary btn-block" disabled={busy || exportRmMut.isPending}
+                        onClick={() => exportRmMut.mutate()}>
+                        <IconUpload size={14} /> {exportRmMut.isPending ? "Exportando…" : "Exportar para o RM"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="card">
               <div className="card-header"><h3 className="h-card-title">Histórico</h3></div>
