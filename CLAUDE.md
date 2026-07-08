@@ -18,7 +18,8 @@ npm run dev      # http://localhost:3000
 
 ## Estrutura
 - `app/`: `verificar` (e-mail-first, real), `inscricao` (wizard real: conta → ENEM → curso → família com situação de renda → documentos), `painel`/`acompanhamento` (reais), `ficha` (campos reais; persistência pendente), `documentos` (lê o resolver real), `admin/*` (mock).
-- `lib/api.ts`: `authApi`, `applicationsApi` (me/events/requiredDocuments/enem/course), `familyApi`, `socioApi`, `coursesApi`, `cyclesApi`.
+- `lib/api.ts`: `authApi`, `applicationsApi` (me/events/requiredDocuments/enem/course), `familyApi`, `socioApi`, `coursesApi`, `cyclesApi`, `adminApi` (fila/análise/decisão + `exportToRm`), `catalogApi`.
+- **Análise (`app/admin/analise/[id]`)**: card **"Integração RM"** — quando o candidato está *classificado*, botão **"Exportar para o RM"** (`adminApi.exportToRm`) que cria a inscrição no TOTVS RM e move o status para *concedida*; exibe a matrícula quando já exportado.
 - `components/`: `app-shell`, `signup-shell`, `ui`, `icons` — preservar visual/CSS ao religar telas (evitar regressão).
 
 ## ⚠️ Convenções
