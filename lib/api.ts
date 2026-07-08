@@ -360,6 +360,9 @@ export const adminApi = {
   /** Exporta a inscrição (classificado) para o TOTVS RM e devolve o detalhe atualizado. */
   exportToRm: (appId: string) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, { method: "POST" }),
+  /** Reverte a exportação (corretivo, ADMIN): limpa o vínculo com o RM e volta o status. */
+  revertRm: (appId: string) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export/revert`, { method: "POST" }),
   /** Diagnóstico read-only: o backend alcança o RM? (confirma a rota AWS→RM). */
   pingRm: () =>
     apiFetch<{ target: string; ok: boolean; httpStatus?: number; ms: number; error?: string }>("/admin/rm/ping"),
