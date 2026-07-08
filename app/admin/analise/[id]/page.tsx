@@ -117,6 +117,10 @@ export default function AnalysisPage() {
     mutationFn: () => adminApi.exportToRm(params.id),
     onSuccess: invalidate,
   });
+  const revertRmMut = useMutation({
+    mutationFn: () => adminApi.revertRm(params.id),
+    onSuccess: invalidate,
+  });
   const incomeMut = useMutation({
     mutationFn: () => adminApi.setIncome(params.id, { grossIncome: grossIncome.trim() || null, note: incomeNote.trim() || null }),
     onSuccess: invalidate,
@@ -457,6 +461,16 @@ export default function AnalysisPage() {
                         Registro: <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{d.rmRegistration}</span>
                         {d.rmSyncedAt && <> · {fmtWhen(d.rmSyncedAt)}</>}
                       </div>
+                      {user?.role === "ADMIN" && (
+                        <>
+                          {revertRmMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(revertRmMut.error as Error).message}</p>}
+                          <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, color: "var(--red-700)" }}
+                            disabled={busy || revertRmMut.isPending}
+                            onClick={() => { if (confirm("Reverter a exportação? Remove o vínculo com o RM e volta o status para Classificado. Use apenas para corrigir uma exportação indevida (ex.: feita sem o RM configurado).")) revertRmMut.mutate(); }}>
+                            {revertRmMut.isPending ? "Revertendo…" : "Reverter exportação"}
+                          </button>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
