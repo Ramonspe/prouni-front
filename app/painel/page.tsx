@@ -9,7 +9,11 @@ import { useAuth } from "@/lib/auth-context";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { applicationsApi, coursesApi } from "@/lib/api";
 import { formatDateBR, formatDateTimeBR } from "@/lib/format";
-import type { ApplicationEventDto, ProcessStatus, TimelineItemData } from "@prouni/shared";
+import { PRESELECTION_CALLS, type ApplicationEventDto, type PreselectionCall, type ProcessStatus, type TimelineItemData } from "@prouni/shared";
+
+function callLabel(c: PreselectionCall): string {
+  return PRESELECTION_CALLS.find((x) => x.value === c)?.label ?? c;
+}
 
 /** Editor de curso/campus (A2) — disponível enquanto a inscrição não foi enviada. */
 function CursoEditor({ appId, currentCourseId, campusCode }: { appId: string; currentCourseId: string | null; campusCode: string | null }) {
@@ -154,6 +158,14 @@ export default function PainelPage() {
               <Stepper steps={STEP_LABELS} current={STEP_BY_STATUS[data.status] ?? 1} />
             </div>
 
+            {["iniciada", "pendencia"].includes(data.status) && data.submissionDeadline && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="info" title={`Prazo de entrega — ${callLabel(data.call)}`}>
+                  Envie e finalize seus documentos até <strong>{formatDateBR(data.submissionDeadline)}</strong>, prazo da sua chamada.
+                </Banner>
+              </div>
+            )}
+
             {data.status === "pendencia" && (
               <div style={{ marginBottom: 18 }}>
                 <Banner tone="warn" title="Há documentos com pendência">
@@ -165,31 +177,15 @@ export default function PainelPage() {
             {["enviada", "analise_doc", "analise_socio"].includes(data.status) && (
               <div style={{ marginBottom: 18 }}>
                 <Banner tone="info" title="Inscrição recebida — em análise">
-                  Sua inscrição foi enviada e está em análise pela equipe de Bolsas. Você será avisado por aqui e por e-mail quando houver novidades.
+                  Sua documentação foi enviada e está em análise pela equipe de Bolsas. <strong>O resultado é divulgado pelo MEC</strong> no portal do Prouni (acessounico.mec.gov.br/prouni).
                 </Banner>
               </div>
             )}
 
-            {["classificado", "concedida"].includes(data.status) && (
+            {["classificado", "espera", "indeferido", "concedida"].includes(data.status) && (
               <div style={{ marginBottom: 18 }}>
-                <Banner tone="success" title="Inscrição classificada">
-                  Parabéns! Sua inscrição foi classificada na análise socioeconômica. Acompanhe em <Link href="/notificacoes" style={{ marginLeft: 4 }}>Notificações</Link> os próximos passos da matrícula.
-                </Banner>
-              </div>
-            )}
-
-            {data.status === "espera" && (
-              <div style={{ marginBottom: 18 }}>
-                <Banner tone="info" title="Você está na lista de espera">
-                  Sua inscrição foi analisada e, no momento, não há vaga disponível. Caso surjam novas vagas, entraremos em contato seguindo a ordem de classificação — mantenha seus dados e documentos atualizados.
-                </Banner>
-              </div>
-            )}
-
-            {data.status === "indeferido" && (
-              <div style={{ marginBottom: 18 }}>
-                <Banner tone="danger" title="Inscrição não aprovada">
-                  Após a análise, sua inscrição não foi aprovada nesta etapa. Veja o motivo e o parecer em <Link href="/notificacoes" style={{ marginLeft: 4 }}>Notificações</Link>. Em caso de dúvidas, fale com a Secretaria de Bolsas.
+                <Banner tone="info" title="Análise concluída">
+                  A análise da sua documentação foi concluída e o resultado foi encaminhado ao MEC. <strong>A divulgação do resultado é feita pelo MEC</strong>, no portal do Prouni (acessounico.mec.gov.br/prouni).
                 </Banner>
               </div>
             )}
@@ -209,7 +205,7 @@ export default function PainelPage() {
                     <Link href="/ficha" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconFile size={15} /> Retomar ficha</Link>
                     <Link href="/documentos" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconUpload size={15} /> Enviar documento</Link>
                     <Link href="/acompanhamento" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconClock size={15} /> Ver status detalhado</Link>
-                    <button className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconDownload size={15} /> Baixar edital</button>
+                    <a href="/edital-prouni-2026-2.pdf" target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ justifyContent: "flex-start" }}><IconDownload size={15} /> Baixar edital</a>
                   </div>
                 </div>
 

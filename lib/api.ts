@@ -15,6 +15,9 @@ import type {
   UserUpdateInput,
   MaintenanceSummaryDto,
   MaintenanceResetResult,
+  SystemSettingsDto,
+  SystemSettingsInput,
+  RegistrationStatusDto,
   DocMatrixSyncResult,
   CourseSyncResult,
   ApplicationDto,
@@ -234,6 +237,9 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
 
 /** Endpoints de autenticação/cadastro. */
 export const authApi = {
+  /** Situação pública do período de cadastro (habilita/bloqueia o botão de cadastro). */
+  registrationStatus: () =>
+    apiFetch<RegistrationStatusDto>("/account/registration-status", { auth: false, retry: false }),
   login: (cpf: string, password: string) =>
     apiFetch<AuthResponse>("/auth/login", { method: "POST", body: { cpf, password }, auth: false, retry: false }),
   refresh: () => apiFetch<AuthResponse>("/auth/refresh", { method: "POST", auth: false, retry: false }),
@@ -326,10 +332,11 @@ export const documentsApi = {
 
 /** Área administrativa (equipe). Somente leitura na Fase 1. */
 export const adminApi = {
-  applications: (params: { q?: string; status?: string } = {}) => {
+  applications: (params: { q?: string; status?: string; call?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.status && params.status !== "all") qs.set("status", params.status);
+    if (params.call && params.call !== "all") qs.set("call", params.call);
     const s = qs.toString();
     return apiFetch<AdminApplicationRow[]>(`/admin/applications${s ? `?${s}` : ""}`);
   },
@@ -380,17 +387,23 @@ export const adminApi = {
 
 /** Pré-selecionados (Configurações): CRUD + importação CSV/Excel. */
 export const preselectionApi = {
-  list: (q?: string) =>
-    apiFetch<PreselectionEntryDto[]>(`/admin/preselection${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  list: (q?: string, call?: string) => {
+    const qs = new URLSearchParams();
+    if (q) qs.set("q", q);
+    if (call && call !== "all") qs.set("call", call);
+    const s = qs.toString();
+    return apiFetch<PreselectionEntryDto[]>(`/admin/preselection${s ? `?${s}` : ""}`);
+  },
   create: (body: PreselectionInput) =>
     apiFetch<PreselectionEntryDto>("/admin/preselection", { method: "POST", body }),
   update: (id: string, body: PreselectionInput) =>
     apiFetch<PreselectionEntryDto>(`/admin/preselection/${id}`, { method: "PATCH", body }),
   remove: (id: string) =>
     apiFetch<{ ok: true }>(`/admin/preselection/${id}`, { method: "DELETE" }),
-  import: (file: File) => {
+  import: (file: File, call: string) => {
     const fd = new FormData();
     fd.append("file", file);
+    fd.append("call", call);
     return apiFetch<PreselectionImportResult>("/admin/preselection/import", { method: "POST", body: fd });
   },
 };
@@ -453,6 +466,13 @@ export const maintenanceApi = {
     apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", { method: "POST" }),
   syncCourses: () =>
     apiFetch<CourseSyncResult>("/admin/maintenance/sync-courses", { method: "POST" }),
+};
+
+/** Parâmetros globais do sistema (Configurações → Parâmetros do sistema). Restrito a ADMIN. */
+export const settingsApi = {
+  get: () => apiFetch<SystemSettingsDto>("/admin/settings"),
+  update: (body: SystemSettingsInput) =>
+    apiFetch<SystemSettingsDto>("/admin/settings", { method: "PUT", body }),
 };
 
 /** Ficha socioeconômica (autosave por seção + envio). */

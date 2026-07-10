@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { IconChevR, IconClock, IconHelp, IconInfo, IconShield, IconUser } from "@/components/icons";
+import { IconChevR, IconClock, IconFile, IconHelp, IconInfo, IconShield } from "@/components/icons";
+import { RegisterCta } from "@/components/register-cta";
+import { EDITAL_HREF, SECRETARIA_MAILTO } from "@/components/public-shell";
 
 export default function WelcomePage() {
   return (
@@ -19,9 +21,10 @@ export default function WelcomePage() {
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14, fontSize: 13, color: "#4a5872" }}>
-          <Link href="#" style={{ color: "#4a5872" }}>Edital 2026/2</Link>
-          <Link href="#" style={{ color: "#4a5872" }}>Perguntas frequentes</Link>
-          <Link href="#" style={{ color: "#4a5872" }}>Falar com a secretaria</Link>
+          <a href={EDITAL_HREF} target="_blank" rel="noopener noreferrer" style={{ color: "#4a5872" }}>Edital 2026/2</a>
+          <Link href="/relacao-de-documentos" style={{ color: "#4a5872" }}>Relação de documentos</Link>
+          <Link href="/faq" style={{ color: "#4a5872" }}>Perguntas frequentes</Link>
+          <a href={SECRETARIA_MAILTO} style={{ color: "#4a5872" }}>Falar com a secretaria</a>
         </div>
       </header>
 
@@ -78,9 +81,11 @@ export default function WelcomePage() {
               Foi pré-selecionado pelo MEC? Crie sua conta institucional para iniciar o cadastro,
               anexar documentos e acompanhar sua análise.
             </p>
-            <Link href="/verificar" className="btn btn-primary btn-lg btn-block" style={{ marginTop: 18 }}>
-              <IconUser size={16} /> Quero me cadastrar
-              <IconChevR size={16} />
+            <RegisterCta />
+            <Link href="/relacao-de-documentos" className="welcome-doclink">
+              <IconFile size={14} />
+              <span>Veja a <strong>relação completa de documentos</strong> exigidos antes de começar</span>
+              <IconChevR size={13} style={{ marginLeft: "auto" }} />
             </Link>
             <div className="welcome-cta-foot">
               <IconInfo size={13} />
@@ -114,9 +119,9 @@ export default function WelcomePage() {
       <footer className="welcome-footer">
         <span>© 2026 Instituto Mauá de Tecnologia · CNPJ 60.882.298/0001-09</span>
         <span style={{ marginLeft: "auto" }}>
-          <Link href="#" style={{ color: "#6c7891" }}>Política de privacidade</Link>
+          <Link href="/privacidade" style={{ color: "#6c7891" }}>Política de privacidade</Link>
           <span style={{ color: "#c3cad8", margin: "0 10px" }}>·</span>
-          <Link href="#" style={{ color: "#6c7891" }}>Termos de uso</Link>
+          <Link href="/termos" style={{ color: "#6c7891" }}>Termos de uso</Link>
         </span>
       </footer>
     </div>

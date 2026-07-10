@@ -113,7 +113,7 @@ export default function AcompanhamentoPage() {
                         <div className="muted small">bolsas@maua.br</div>
                       </div>
                     </div>
-                    <button className="btn btn-secondary btn-block"><IconMessage size={14} /> Enviar mensagem</button>
+                    <a href="mailto:bolsas@maua.br?subject=PROUNI%20Mau%C3%A1%202026%2F2%20-%20Acompanhamento%20da%20inscri%C3%A7%C3%A3o" className="btn btn-secondary btn-block"><IconMessage size={14} /> Enviar mensagem</a>
                   </div>
                 </div>
               </div>

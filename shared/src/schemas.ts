@@ -229,12 +229,17 @@ export const clientErrorReportSchema = z.object({
 export type ClientErrorReport = z.infer<typeof clientErrorReportSchema>;
 
 /** Cadastro/edição manual de pré-selecionado (Configurações, admin). */
+export const preselectionCallSchema = z
+  .enum(["PRIMEIRA", "SEGUNDA", "ESPERA"])
+  .default("PRIMEIRA");
+
 export const preselectionInputSchema = z.object({
   cpf: cpfSchema,
   fullName: txt(120).optional(),
   courseHint: txt(120).optional(),
   campusHint: txt(40).optional(),
   enemRegistration: txt(20).optional(),
+  call: preselectionCallSchema,
 });
 export type PreselectionInputSchema = z.infer<typeof preselectionInputSchema>;
 
@@ -320,3 +325,32 @@ export const docTypeUpsertSchema = z.object({
   active: z.boolean().default(true),
 });
 export type DocTypeUpsertInput = z.infer<typeof docTypeUpsertSchema>;
+
+/** Parâmetros globais do sistema (Configurações → Parâmetros do sistema). */
+const decimalStr = (max: number) =>
+  z
+    .string()
+    .trim()
+    .regex(/^\d+(?:[.,]\d{1,2})?$/, "Valor inválido")
+    .refine((v) => Number(v.replace(",", ".")) <= max, `Valor acima do máximo (${max})`);
+const dateStr = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida")
+  .nullable()
+  .optional();
+
+export const systemSettingsSchema = z.object({
+  minimumWage: decimalStr(1_000_000),
+  integralFactor: decimalStr(100),
+  parcialEnabled: z.boolean(),
+  parcialFactor: decimalStr(100),
+  call1Start: dateStr,
+  call1End: dateStr,
+  call2Start: dateStr,
+  call2End: dateStr,
+  waitlistStart: dateStr,
+  waitlistEnd: dateStr,
+  notifyCandidate: z.boolean(),
+});
+export type SystemSettingsInput = z.infer<typeof systemSettingsSchema>;

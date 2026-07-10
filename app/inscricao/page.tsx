@@ -226,8 +226,9 @@ function StepAccount({
             <input type="checkbox" checked={acceptTerms} onChange={() => setAcceptTerms((v) => !v)} />
             <span className="box" />
             <span>
-              Li e aceito o <a href="#" onClick={(e) => e.preventDefault()}>edital PROUNI 2026/2</a> e a{" "}
-              <a href="#" onClick={(e) => e.preventDefault()}>Política de Privacidade</a> conforme a Lei
+              Li e aceito o{" "}
+              <a href="/edital-prouni-2026-2.pdf" target="_blank" rel="noopener noreferrer">edital PROUNI 2026/2</a> e a{" "}
+              <a href="/privacidade" target="_blank" rel="noopener noreferrer">Política de Privacidade</a> conforme a Lei
               13.709/18 (LGPD).
             </span>
           </label>
@@ -238,7 +239,7 @@ function StepAccount({
             <span>
               Desejo concorrer às <strong>vagas reservadas por cotas</strong> (Lei nº 11.096/2005 e Lei nº
               12.711/2012). Estou ciente de que deverei preencher e assinar o{" "}
-              <a href="#" onClick={(e) => e.preventDefault()}>Formulário de Autodeclaração de Cotas</a> e
+              <a href="/modelos/anexo-02-autodeclaracao-etnico-racial.docx" target="_blank" rel="noopener noreferrer">Formulário de Autodeclaração de Cotas</a> e
               anexá-lo junto aos demais documentos comprobatórios.
             </span>
           </label>
