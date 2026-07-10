@@ -80,8 +80,12 @@ export default function NotificacoesPage() {
         });
       }
     }
-    // Eventos da inscrição (pareceres, decisões, mudanças de status)
+    // Eventos da inscrição (mudanças de status). O RESULTADO (classificado, lista
+    // de espera, indeferido, concedida) NÃO é exibido ao candidato: a divulgação é
+    // feita pelo MEC no portal do Prouni.
+    const RESULT_STATUSES = ["classificado", "espera", "indeferido", "concedida"];
     for (const e of events.data ?? []) {
+      if (e.toStatus && RESULT_STATUSES.includes(e.toStatus)) continue;
       const { tone, tag, kind } = eventTone(e.toStatus);
       list.push({ id: `ev-${e.id}`, kind, title: e.title, body: e.body, when: e.createdAt, tone, tag });
     }

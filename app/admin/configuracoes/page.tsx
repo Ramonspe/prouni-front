@@ -7,12 +7,15 @@ import { IconCheck, IconPlus, IconSearch, IconTrash, IconUpload, IconX } from "@
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { preselectionApi } from "@/lib/api";
 import { maskCpf } from "@/lib/format";
-import type { PreselectionEntryDto, PreselectionImportResult, PreselectionInput } from "@prouni/shared";
+import { PRESELECTION_CALLS, type PreselectionCall, type PreselectionEntryDto, type PreselectionImportResult, type PreselectionInput } from "@prouni/shared";
 
-const EMPTY: PreselectionInput = { cpf: "", fullName: "", courseHint: "", campusHint: "", enemRegistration: "" };
+const EMPTY: PreselectionInput = { cpf: "", fullName: "", courseHint: "", campusHint: "", enemRegistration: "", call: "PRIMEIRA" };
 
 function fmtWhen(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+function callLabel(c: PreselectionCall): string {
+  return PRESELECTION_CALLS.find((x) => x.value === c)?.label ?? c;
 }
 
 export default function ConfiguracoesPage() {
@@ -21,6 +24,8 @@ export default function ConfiguracoesPage() {
   const isAdmin = user?.role === "ADMIN";
 
   const [search, setSearch] = useState("");
+  const [callFilter, setCallFilter] = useState("all");
+  const [importCall, setImportCall] = useState<PreselectionCall>("PRIMEIRA");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PreselectionInput>(EMPTY);
@@ -28,8 +33,8 @@ export default function ConfiguracoesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const query = useQuery({
-    queryKey: ["admin", "preselection"],
-    queryFn: () => preselectionApi.list(),
+    queryKey: ["admin", "preselection", callFilter],
+    queryFn: () => preselectionApi.list(undefined, callFilter),
     enabled: !!user,
   });
   const all = useMemo(() => query.data ?? [], [query.data]);
@@ -51,7 +56,7 @@ export default function ConfiguracoesPage() {
     onSuccess: invalidate,
   });
   const importMut = useMutation({
-    mutationFn: (file: File) => preselectionApi.import(file),
+    mutationFn: (vars: { file: File; call: string }) => preselectionApi.import(vars.file, vars.call),
     onSuccess: (r) => { setImportResult(r); invalidate(); if (fileRef.current) fileRef.current.value = ""; },
   });
 
@@ -59,7 +64,7 @@ export default function ConfiguracoesPage() {
     setForm((f) => ({ ...f, [k]: e.target.value }));
   const startEdit = (e: PreselectionEntryDto) => {
     setEditingId(e.id);
-    setForm({ cpf: e.cpf, fullName: e.fullName ?? "", courseHint: e.courseHint ?? "", campusHint: e.campusHint ?? "", enemRegistration: e.enemRegistration ?? "" });
+    setForm({ cpf: e.cpf, fullName: e.fullName ?? "", courseHint: e.courseHint ?? "", campusHint: e.campusHint ?? "", enemRegistration: e.enemRegistration ?? "", call: e.call });
     setShowForm(true);
   };
 
@@ -94,16 +99,26 @@ export default function ConfiguracoesPage() {
                 <span className="mono"> Nome</span>, <span className="mono">Curso</span>, <span className="mono">Campus</span> e <span className="mono">ENEM</span>.
                 CPFs já existentes são atualizados; inválidos são ignorados.
               </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="input" style={{ maxWidth: 360 }} />
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div className="field" style={{ margin: 0, minWidth: 170 }}>
+                  <label className="field-label" style={{ marginBottom: 4 }}>Chamada da lista</label>
+                  <select className="input" value={importCall} onChange={(e) => setImportCall(e.target.value as PreselectionCall)}>
+                    {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="input" style={{ maxWidth: 320, alignSelf: "flex-end" }} />
                 <button
                   className="btn btn-secondary"
+                  style={{ alignSelf: "flex-end" }}
                   disabled={importMut.isPending}
-                  onClick={() => { const f = fileRef.current?.files?.[0]; if (f) { setImportResult(null); importMut.mutate(f); } }}
+                  onClick={() => { const f = fileRef.current?.files?.[0]; if (f) { setImportResult(null); importMut.mutate({ file: f, call: importCall }); } }}
                 >
                   <IconUpload size={14} /> {importMut.isPending ? "Importando…" : "Importar"}
                 </button>
               </div>
+              <p className="muted small" style={{ marginTop: 8 }}>
+                Todos os registros desta planilha serão marcados como <strong>{callLabel(importCall)}</strong>.
+              </p>
               {importMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(importMut.error as Error).message}</p>}
               {importResult && (
                 <div style={{ marginTop: 12 }}>
@@ -152,6 +167,12 @@ export default function ConfiguracoesPage() {
                   <label className="field-label">Inscrição ENEM</label>
                   <input className="input" inputMode="numeric" maxLength={12} value={form.enemRegistration ?? ""} onChange={(e) => setForm((f) => ({ ...f, enemRegistration: e.target.value.replace(/\D/g, "").slice(0, 12) }))} />
                 </div>
+                <div className="field">
+                  <label className="field-label">Chamada</label>
+                  <select className="input" value={form.call ?? "PRIMEIRA"} onChange={(e) => setForm((f) => ({ ...f, call: e.target.value as PreselectionCall }))}>
+                    {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
               </div>
               {saveMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(saveMut.error as Error).message}</p>}
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -164,24 +185,30 @@ export default function ConfiguracoesPage() {
           </div>
         )}
 
-        {/* Busca + tabela */}
-        <div className="search-input" style={{ width: 320, background: "#fff", border: "1px solid var(--ink-200)", marginBottom: 12 }}>
-          <IconSearch size={14} />
-          <input placeholder="Buscar por CPF ou nome…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {/* Busca + filtro + tabela */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+          <div className="search-input" style={{ width: 320, background: "#fff", border: "1px solid var(--ink-200)" }}>
+            <IconSearch size={14} />
+            <input placeholder="Buscar por CPF ou nome…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <select className="input" style={{ width: 180 }} value={callFilter} onChange={(e) => setCallFilter(e.target.value)}>
+            <option value="all">Todas as chamadas</option>
+            {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
         </div>
 
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="table">
             <thead>
-              <tr><th>CPF</th><th>Nome</th><th>Curso</th><th>Campus</th><th>ENEM</th><th>Situação</th><th>Cadastrado</th><th></th></tr>
+              <tr><th>CPF</th><th>Nome</th><th>Curso</th><th>Campus</th><th>Chamada</th><th>ENEM</th><th>Situação</th><th>Cadastrado</th><th></th></tr>
             </thead>
             <tbody>
               {query.isLoading || !user ? (
-                <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
+                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
               ) : query.isError ? (
-                <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar.</td></tr>
+                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar.</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum pré-selecionado.</td></tr>
+                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum pré-selecionado.</td></tr>
               ) : (
                 rows.map((e) => (
                   <tr key={e.id}>
@@ -189,6 +216,7 @@ export default function ConfiguracoesPage() {
                     <td>{e.fullName ?? <span className="muted small">—</span>}</td>
                     <td>{e.courseHint ?? <span className="muted small">—</span>}</td>
                     <td>{e.campusHint ?? <span className="muted small">—</span>}</td>
+                    <td>{callLabel(e.call)}</td>
                     <td className="mono">{e.enemRegistration ?? <span className="muted small">—</span>}</td>
                     <td>{e.claimed ? <Badge tone="success">Inscrito</Badge> : <Badge tone="neutral">Disponível</Badge>}</td>
                     <td className="muted small">{fmtWhen(e.createdAt)}</td>

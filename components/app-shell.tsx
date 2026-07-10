@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminApi, cyclesApi } from "@/lib/api";
 import { Avatar, MauaBrand } from "./ui";
@@ -84,6 +84,7 @@ const adminNav: NavItem[] = [
     children: [
       { id: "presel", label: "Pré-selecionados", href: "/admin/configuracoes" },
       { id: "users", label: "Usuários", href: "/admin/configuracoes/usuarios", match: "/admin/configuracoes/usuarios" },
+      { id: "params", label: "Parâmetros do sistema", href: "/admin/configuracoes/parametros", match: "/admin/configuracoes/parametros" },
       { id: "maint", label: "Manutenção", href: "/admin/configuracoes/manutencao", match: "/admin/configuracoes/manutencao" },
     ],
   },
@@ -197,6 +198,27 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
 
 function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role; onBurger?: () => void }) {
   const router = useRouter();
+  const [q, setQ] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Atalho ⌘K / Ctrl+K foca a busca (apenas para a equipe).
+  useEffect(() => {
+    if (role !== "admin") return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [role]);
+
+  const runSearch = () => {
+    const term = q.trim();
+    router.push(term ? `/admin/candidatos?q=${encodeURIComponent(term)}` : "/admin/candidatos");
+  };
+
   return (
     <header className="topbar">
       <button className="topbar-burger icon-btn" aria-label="Abrir menu" onClick={onBurger}>
@@ -212,17 +234,18 @@ function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role
       </div>
       <div className="topbar-actions">
         {role === "admin" && (
-          <>
-            <div className="search-input">
-              <IconSearch size={14} />
-              <input placeholder="Buscar por CPF, nome, protocolo…" />
-              <span className="kbd">⌘K</span>
-            </div>
-            <div className="profile-switch" title="Alternar perfil (demo)">
-              <button onClick={() => router.push("/painel")}>Candidato</button>
-              <button className="active" onClick={() => router.push("/admin")}>Administrativo</button>
-            </div>
-          </>
+          <div className="search-input" onClick={() => searchRef.current?.focus()}>
+            <IconSearch size={14} />
+            <input
+              ref={searchRef}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
+              placeholder="Buscar por CPF, nome, protocolo…"
+              aria-label="Buscar candidatos"
+            />
+            <span className="kbd">⌘K</span>
+          </div>
         )}
         {role === "candidate" && (
           <button className="icon-btn has-dot" title="Notificações" onClick={() => router.push("/notificacoes")}>

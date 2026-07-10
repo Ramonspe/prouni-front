@@ -164,6 +164,8 @@ export interface ApplicationDto {
   enem: { edition: number | null; registration: string | null; score: string | null };
   scholarshipKind: string | null;
   priority: string | null;
+  call: PreselectionCall; // chamada (1ª/2ª/espera)
+  submissionDeadline: string | null; // prazo de entrega da chamada ("YYYY-MM-DD")
   createdAt: string;
   updatedAt: string;
 }
@@ -333,6 +335,7 @@ export interface AdminApplicationRow {
   docsApproved: number; // documentos aprovados
   perCapita: string | null; // renda bruta per capita (string decimal) ou null
   analyst: string | null; // nome do analista responsável, ou null
+  call: PreselectionCall; // chamada (1ª/2ª/espera)
   updatedAt: string; // ISO
 }
 
@@ -393,6 +396,27 @@ export const DECISION_REASONS: Record<
 };
 
 /** Candidato pré-selecionado (linha da matriz importada do MEC/manual). */
+/** Chamada do processo (define a janela de entrega de documentos). */
+export type PreselectionCall = "PRIMEIRA" | "SEGUNDA" | "ESPERA";
+export const PRESELECTION_CALLS: { value: PreselectionCall; label: string }[] = [
+  { value: "PRIMEIRA", label: "1ª chamada" },
+  { value: "SEGUNDA", label: "2ª chamada" },
+  { value: "ESPERA", label: "Lista de espera" },
+];
+
+/** Situação pública do período de cadastro (tela inicial). */
+export interface RegistrationCallStatus {
+  value: PreselectionCall;
+  label: string;
+  start: string | null; // "YYYY-MM-DD"
+  end: string | null;
+  open: boolean;
+}
+export interface RegistrationStatusDto {
+  open: boolean; // há alguma chamada aberta hoje
+  calls: RegistrationCallStatus[];
+}
+
 export interface PreselectionEntryDto {
   id: string;
   cpf: string; // formatado 000.000.000-00
@@ -400,6 +424,7 @@ export interface PreselectionEntryDto {
   courseHint: string | null;
   campusHint: string | null;
   enemRegistration: string | null;
+  call: PreselectionCall; // chamada (1ª/2ª/espera)
   claimed: boolean; // já virou inscrição (não pode excluir)
   createdAt: string;
 }
@@ -411,6 +436,7 @@ export interface PreselectionInput {
   courseHint?: string | null;
   campusHint?: string | null;
   enemRegistration?: string | null;
+  call?: PreselectionCall;
 }
 
 /** Resultado da importação de planilha (CSV/Excel) de pré-selecionados. */
@@ -454,6 +480,24 @@ export interface DocMatrixSyncResult {
 export interface CourseSyncResult {
   campuses: number;
   coursesUpserted: number;
+}
+
+/** Parâmetros globais do sistema (Configurações → Parâmetros do sistema). */
+export interface SystemSettingsDto {
+  minimumWage: string; // salário mínimo vigente (R$), string decimal
+  integralFactor: string; // fator do teto integral (× salário mínimo)
+  parcialEnabled: boolean; // bolsa parcial habilitada neste ciclo
+  parcialFactor: string; // fator do teto parcial (× salário mínimo)
+  call1Start: string | null; // "YYYY-MM-DD" — janela de entrega da 1ª chamada
+  call1End: string | null;
+  call2Start: string | null; // 2ª chamada
+  call2End: string | null;
+  waitlistStart: string | null; // lista de espera
+  waitlistEnd: string | null;
+  notifyCandidate: boolean; // avisar o candidato por e-mail nas decisões
+  updatedAt: string; // ISO
+  integralCap: string; // teto integral calculado = minimumWage × integralFactor
+  parcialCap: string; // teto parcial calculado = minimumWage × parcialFactor
 }
 
 /* ============ Catálogo da matriz documental (editor visual) ============ */
