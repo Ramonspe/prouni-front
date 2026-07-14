@@ -21,7 +21,7 @@ function callLabel(c: PreselectionCall): string {
 export default function ConfiguracoesPage() {
   const { user } = useRequireStaff();
   const qc = useQueryClient();
-  const isAdmin = user?.role === "ADMIN";
+  const canManage = user?.role === "ADMIN" || user?.role === "ANALYST";
 
   const [search, setSearch] = useState("");
   const [callFilter, setCallFilter] = useState("all");
@@ -76,21 +76,21 @@ export default function ConfiguracoesPage() {
             <h1 className="page-title">Pré-selecionados</h1>
             <p className="page-subtitle">Cadastro e importação dos candidatos pré-selecionados (MEC ou adesão institucional) do ciclo ativo.</p>
           </div>
-          {isAdmin && (
+          {canManage && (
             <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
               <IconPlus size={14} /> Novo pré-selecionado
             </button>
           )}
         </div>
 
-        {!isAdmin && (
+        {!canManage && (
           <Banner tone="info" title="Acesso somente leitura">
-            Apenas administradores podem cadastrar, editar, excluir ou importar pré-selecionados.
+            Seu perfil pode consultar a lista. O cadastro, edição, exclusão e importação de pré-selecionados são feitos por administradores e analistas.
           </Banner>
         )}
 
         {/* Importação */}
-        {isAdmin && (
+        {canManage && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header"><h3 className="h-card-title">Importar planilha (CSV ou Excel)</h3></div>
             <div className="card-body">
@@ -139,7 +139,7 @@ export default function ConfiguracoesPage() {
         )}
 
         {/* Formulário criar/editar */}
-        {isAdmin && showForm && (
+        {canManage && showForm && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header">
               <h3 className="h-card-title">{editingId ? "Editar pré-selecionado" : "Novo pré-selecionado"}</h3>
@@ -221,14 +221,19 @@ export default function ConfiguracoesPage() {
                     <td>{e.claimed ? <Badge tone="success">Inscrito</Badge> : <Badge tone="neutral">Disponível</Badge>}</td>
                     <td className="muted small">{fmtWhen(e.createdAt)}</td>
                     <td>
-                      {isAdmin && (
+                      {canManage && (
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           <button className="btn btn-ghost btn-sm" onClick={() => startEdit(e)}>Editar</button>
                           <button
                             className="btn btn-ghost btn-sm"
-                            disabled={e.claimed || removeMut.isPending}
-                            title={e.claimed ? "Já possui inscrição — não pode excluir" : "Excluir"}
-                            onClick={() => { if (confirm(`Excluir o pré-selecionado ${e.cpf}?`)) removeMut.mutate(e.id); }}
+                            disabled={removeMut.isPending}
+                            title="Excluir"
+                            onClick={() => {
+                              const msg = e.claimed
+                                ? `ATENÇÃO — ${e.cpf} já possui inscrição.\n\nExcluir vai REMOVER permanentemente a inscrição, os documentos enviados e a conta do candidato, além do pré-selecionado. Esta ação é IRREVERSÍVEL.\n\nDeseja continuar?`
+                                : `Excluir o pré-selecionado ${e.cpf}?`;
+                              if (confirm(msg)) removeMut.mutate(e.id);
+                            }}
                           >
                             <IconTrash size={13} />
                           </button>
