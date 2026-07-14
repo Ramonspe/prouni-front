@@ -11,6 +11,18 @@ export const cpfSchema = z
   .transform(normalizeCpf)
   .refine((v) => isValidCpf(v), "CPF inválido");
 
+/**
+ * CPF para LOGIN: apenas normaliza e exige 11 dígitos — NÃO valida dígito
+ * verificador. No login só buscamos a conta pelo CPF; a validação de checksum
+ * pertence ao cadastro. Permite contas administrativas com CPF genérico
+ * (ex.: 000.000.000-00) fazerem login.
+ */
+export const loginCpfSchema = z
+  .string()
+  .max(14, "CPF inválido")
+  .transform(normalizeCpf)
+  .refine((v) => /^\d{11}$/.test(v), "CPF inválido");
+
 export const emailSchema = z
   .string()
   .trim()
@@ -50,10 +62,17 @@ export const optionalCpfSchema = z
   .refine((v) => !v || isValidCpf(normalizeCpf(v)), "CPF inválido");
 
 export const loginSchema = z.object({
-  cpf: cpfSchema,
+  cpf: loginCpfSchema,
   password: z.string().min(1, "Informe a senha").max(72),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/** Troca de senha do próprio usuário autenticado (exige a senha atual). */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Informe a senha atual").max(72),
+  newPassword: passwordSchema,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 /**
  * Início do cadastro: SÓ e-mail (verificação anti-bot logo na entrada).

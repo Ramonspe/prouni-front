@@ -15,6 +15,7 @@ import {
   IconHelp,
   IconHome,
   IconLayers,
+  IconLock,
   IconLogout,
   IconMenu,
   IconSearch,
@@ -25,6 +26,7 @@ import {
 } from "./icons";
 import type { Role } from "@/lib/types";
 import { roleLabel, useAuth } from "@/lib/auth-context";
+import { ChangePasswordModal } from "./change-password-modal";
 
 type NavGroup = { group: string };
 type NavSub = {
@@ -130,6 +132,7 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
   const { user, logout } = useAuth();
   const isAdmin = role === "admin";
   const nav = isAdmin ? adminNav : candidateNav;
+  const [pwdOpen, setPwdOpen] = useState(false);
 
   // Contagem real de candidatos para o badge (compartilha o cache da página de candidatos).
   const queueQuery = useQuery({
@@ -188,10 +191,14 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
           </div>
           <div className="user-role">{userRole}</div>
         </div>
+        <button className="icon-btn" style={{ color: "#8a96b3" }} title="Alterar senha" onClick={() => setPwdOpen(true)}>
+          <IconLock size={15} />
+        </button>
         <button className="icon-btn" style={{ color: "#8a96b3" }} title="Sair" onClick={handleLogout}>
           <IconLogout size={15} />
         </button>
       </div>
+      {pwdOpen && <ChangePasswordModal onClose={() => setPwdOpen(false)} />}
     </aside>
   );
 }
