@@ -253,6 +253,8 @@ export const authApi = {
     apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", body: { cpf }, auth: false, retry: false }),
   resetPassword: (cpf: string, code: string, password: string) =>
     apiFetch<{ message: string }>("/auth/reset-password", { method: "POST", body: { cpf, code, password }, auth: false, retry: false }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiFetch<{ message: string }>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } }),
   verifyToken: (email: string, code: string) =>
     apiFetch<{ registrationToken: string; email: string }>("/account/verify-token", {
       method: "POST",
