@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Avatar, Badge, Banner, PriorityBadge, StatusBadge, Stepper, Timeline } from "@/components/ui";
-import { IconAlert, IconCheck, IconChevL, IconDownload, IconExternal, IconEye, IconHistory, IconUpload, IconUser, IconX } from "@/components/icons";
+import { IconAlert, IconCheck, IconChevL, IconDownload, IconExternal, IconEye, IconHistory, IconRefresh, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
 import { DECISION_REASONS, type AdminDecisionInput, type AdminDocumentDto, type DocumentStatusDb, type ProcessStatus } from "@prouni/shared";
@@ -164,6 +164,7 @@ export default function AnalysisPage() {
 
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
   const busy = reviewMut.isPending || decideMut.isPending || assignMut.isPending;
+  const canRefresh = user.role === "ADMIN" || user.role === "ANALYST";
 
   // Renda bruta total = (declarada + outras). Se a equipe ajustou (uso interno),
   // exibe o valor ajustado com o histórico completo das alterações no tooltip.
@@ -190,6 +191,7 @@ export default function AnalysisPage() {
             <button className="btn btn-ghost btn-sm" onClick={() => router.push("/admin/candidatos")}>
               <IconChevL size={13} /> Voltar à fila
             </button>
+            {canRefresh && <button className="btn btn-ghost btn-sm" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={13} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
             <Avatar name={d.name} size={42} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

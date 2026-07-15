@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { adminApi, cyclesApi } from "@/lib/api";
+import { adminApi, authApi, cyclesApi } from "@/lib/api";
 import { Avatar, MauaBrand } from "./ui";
 import {
   IconBell,
@@ -273,7 +273,10 @@ export function AppShell({
   crumbs?: string[];
   children: ReactNode;
 }) {
+  const { user, setSession } = useAuth();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [impersonationError, setImpersonationError] = useState<string | null>(null);
   const pathname = usePathname();
   // Fecha o drawer ao navegar (mobile).
   useEffect(() => {
@@ -288,6 +291,28 @@ export function AppShell({
         aria-hidden
       />
       <div className="main">
+        {user?.impersonating && (
+          <div style={{ background: "var(--yellow-100)", borderBottom: "1px solid var(--yellow-300)", color: "var(--yellow-900)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: "8px 20px", fontSize: 13 }}>
+            <span>
+              <strong>Modo administrador:</strong> você está agindo como este candidato.
+              {impersonationError && <span style={{ color: "var(--red-700)", marginLeft: 8 }}>{impersonationError}</span>}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                try {
+                  const session = await authApi.stopImpersonation();
+                  setSession(session.accessToken, session.user);
+                  router.replace("/admin/configuracoes");
+                } catch (error) {
+                  setImpersonationError(error instanceof Error ? error.message : "Não foi possível restaurar a sessão administrativa.");
+                }
+              }}
+            >
+              Voltar ao administrador
+            </button>
+          </div>
+        )}
         <Topbar crumbs={crumbs} role={role} onBurger={() => setMenuOpen(true)} />
         {children}
       </div>

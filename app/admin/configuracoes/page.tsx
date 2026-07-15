@@ -1,11 +1,13 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Badge, Banner } from "@/components/ui";
-import { IconCheck, IconPlus, IconSearch, IconTrash, IconUpload, IconX } from "@/components/icons";
+import { IconCheck, IconLock, IconPlus, IconRefresh, IconSearch, IconTrash, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
-import { preselectionApi } from "@/lib/api";
+import { authApi, preselectionApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { maskCpf } from "@/lib/format";
 import { PRESELECTION_CALLS, type PreselectionCall, type PreselectionEntryDto, type PreselectionImportResult, type PreselectionInput } from "@prouni/shared";
 
@@ -20,8 +22,11 @@ function callLabel(c: PreselectionCall): string {
 
 export default function ConfiguracoesPage() {
   const { user } = useRequireStaff();
+  const { setSession } = useAuth();
+  const router = useRouter();
   const qc = useQueryClient();
-  const canManage = user?.role === "ADMIN" || user?.role === "ANALYST";
+  const isAdmin = user?.role === "ADMIN";
+  const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
 
   const [search, setSearch] = useState("");
   const [callFilter, setCallFilter] = useState("all");
@@ -59,6 +64,16 @@ export default function ConfiguracoesPage() {
     mutationFn: (vars: { file: File; call: string }) => preselectionApi.import(vars.file, vars.call),
     onSuccess: (r) => { setImportResult(r); invalidate(); if (fileRef.current) fileRef.current.value = ""; },
   });
+  const resetPasswordMut = useMutation({
+    mutationFn: (vars: { candidateId: string; password: string }) => authApi.resetCandidatePassword(vars.candidateId, vars.password),
+  });
+  const impersonateMut = useMutation({
+    mutationFn: (candidateId: string) => authApi.impersonate(candidateId),
+    onSuccess: (session) => {
+      setSession(session.accessToken, session.user);
+      router.replace("/painel");
+    },
+  });
 
   const set = (k: keyof PreselectionInput) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -66,6 +81,19 @@ export default function ConfiguracoesPage() {
     setEditingId(e.id);
     setForm({ cpf: e.cpf, fullName: e.fullName ?? "", courseHint: e.courseHint ?? "", campusHint: e.campusHint ?? "", enemRegistration: e.enemRegistration ?? "", call: e.call });
     setShowForm(true);
+  };
+  const resetCandidatePassword = (e: PreselectionEntryDto) => {
+    if (!e.candidateUserId) return;
+    const password = window.prompt(`Defina a nova senha de ${e.fullName ?? e.cpf}.`);
+    if (!password) return;
+    if (!window.confirm("A senha atual do candidato será substituída e todas as sessões dele serão encerradas. Continuar?")) return;
+    resetPasswordMut.mutate({ candidateId: e.candidateUserId, password });
+  };
+  const impersonateCandidate = (e: PreselectionEntryDto) => {
+    if (!e.candidateUserId) return;
+    if (window.confirm(`Agir como ${e.fullName ?? e.cpf}? Você poderá voltar ao modo administrador a qualquer momento.`)) {
+      impersonateMut.mutate(e.candidateUserId);
+    }
   };
 
   return (
@@ -76,21 +104,24 @@ export default function ConfiguracoesPage() {
             <h1 className="page-title">Pré-selecionados</h1>
             <p className="page-subtitle">Cadastro e importação dos candidatos pré-selecionados (MEC ou adesão institucional) do ciclo ativo.</p>
           </div>
-          {canManage && (
-            <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
-              <IconPlus size={14} /> Novo pré-selecionado
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {canRefresh && <button className="btn btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={14} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
+            {isAdmin && (
+              <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
+                <IconPlus size={14} /> Novo pré-selecionado
+              </button>
+            )}
+          </div>
         </div>
 
-        {!canManage && (
+        {!isAdmin && (
           <Banner tone="info" title="Acesso somente leitura">
-            Seu perfil pode consultar a lista. O cadastro, edição, exclusão e importação de pré-selecionados são feitos por administradores e analistas.
+            Seu perfil pode consultar a lista. O cadastro, edição, exclusão e importação de pré-selecionados são feitos por administradores.
           </Banner>
         )}
 
         {/* Importação */}
-        {canManage && (
+        {isAdmin && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header"><h3 className="h-card-title">Importar planilha (CSV ou Excel)</h3></div>
             <div className="card-body">
@@ -139,7 +170,7 @@ export default function ConfiguracoesPage() {
         )}
 
         {/* Formulário criar/editar */}
-        {canManage && showForm && (
+        {isAdmin && showForm && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header">
               <h3 className="h-card-title">{editingId ? "Editar pré-selecionado" : "Novo pré-selecionado"}</h3>
@@ -200,7 +231,7 @@ export default function ConfiguracoesPage() {
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="table">
             <thead>
-              <tr><th>CPF</th><th>Nome</th><th>Curso</th><th>Campus</th><th>Chamada</th><th>ENEM</th><th>Situação</th><th>Cadastrado</th><th></th></tr>
+              <tr><th>CPF</th><th>Candidato e contato</th><th>Curso</th><th>Campus</th><th>Chamada</th><th>ENEM</th><th>Situação</th><th>Cadastrado</th><th></th></tr>
             </thead>
             <tbody>
               {query.isLoading || !user ? (
@@ -213,7 +244,15 @@ export default function ConfiguracoesPage() {
                 rows.map((e) => (
                   <tr key={e.id}>
                     <td className="mono">{e.cpf}</td>
-                    <td>{e.fullName ?? <span className="muted small">—</span>}</td>
+                    <td>
+                      <div>{e.fullName ?? <span className="muted small">—</span>}</div>
+                      {e.claimed && (e.contactEmail || e.contactPhone) && (
+                        <div className="muted small" style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                          {e.contactEmail && <a href={`mailto:${e.contactEmail}`}>{e.contactEmail}</a>}
+                          {e.contactPhone && <a href={`tel:${e.contactPhone.replace(/\D/g, "")}`}>{e.contactPhone}</a>}
+                        </div>
+                      )}
+                    </td>
                     <td>{e.courseHint ?? <span className="muted small">—</span>}</td>
                     <td>{e.campusHint ?? <span className="muted small">—</span>}</td>
                     <td>{callLabel(e.call)}</td>
@@ -221,9 +260,19 @@ export default function ConfiguracoesPage() {
                     <td>{e.claimed ? <Badge tone="success">Inscrito</Badge> : <Badge tone="neutral">Disponível</Badge>}</td>
                     <td className="muted small">{fmtWhen(e.createdAt)}</td>
                     <td>
-                      {canManage && (
+                      {isAdmin && (
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           <button className="btn btn-ghost btn-sm" onClick={() => startEdit(e)}>Editar</button>
+                          {e.candidateUserId && (
+                            <>
+                              <button className="btn btn-ghost btn-sm" disabled={resetPasswordMut.isPending} onClick={() => resetCandidatePassword(e)} title="Redefinir senha do candidato">
+                                <IconLock size={13} /> Senha
+                              </button>
+                              <button className="btn btn-secondary btn-sm" disabled={impersonateMut.isPending} onClick={() => impersonateCandidate(e)} title="Entrar temporariamente na conta do candidato">
+                                <IconUser size={13} /> Agir como usuário
+                              </button>
+                            </>
+                          )}
                           <button
                             className="btn btn-ghost btn-sm"
                             disabled={removeMut.isPending}
@@ -247,6 +296,8 @@ export default function ConfiguracoesPage() {
           </table>
           <div style={{ padding: "10px 14px", borderTop: "1px solid var(--ink-200)", background: "var(--ink-50)", color: "var(--ink-600)", fontSize: 12.5 }}>
             {rows.length} de {all.length} pré-selecionado(s) {removeMut.isError ? `· ${(removeMut.error as Error).message}` : ""}
+            {resetPasswordMut.isError ? ` · ${(resetPasswordMut.error as Error).message}` : ""}
+            {impersonateMut.isError ? ` · ${(impersonateMut.error as Error).message}` : ""}
           </div>
         </div>
       </div>

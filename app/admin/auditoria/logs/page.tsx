@@ -27,13 +27,16 @@ const ACTION_LABELS: Record<AuditLogAction, string> = {
   PRESELECTION_IMPORTED: "Pré-seleção importada",
   CONFIG_CHANGED: "Configuração alterada",
   CLIENT_ERROR: "Erro no navegador",
+  CANDIDATE_PASSWORD_RESET: "Senha de candidato redefinida",
+  IMPERSONATION_STARTED: "Modo candidato iniciado",
+  IMPERSONATION_ENDED: "Modo candidato encerrado",
 };
 
 /** Cor do selo por ação: falhas/erros em vermelho, alterações em âmbar, resto neutro/azul. */
 function actionTone(a: AuditLogAction): { bg: string; fg: string } {
   if (a === "ACCOUNT_CREATE_FAILED" || a === "CLIENT_ERROR" || a === "DOC_REJECTED")
     return { bg: "var(--red-50, #fef2f2)", fg: "var(--red-700, #b91c1c)" };
-  if (a === "STATUS_CHANGED" || a === "DECISION_MADE" || a === "CONFIG_CHANGED" || a === "DOC_REVERTED")
+  if (a === "STATUS_CHANGED" || a === "DECISION_MADE" || a === "CONFIG_CHANGED" || a === "DOC_REVERTED" || a === "CANDIDATE_PASSWORD_RESET" || a === "IMPERSONATION_STARTED" || a === "IMPERSONATION_ENDED")
     return { bg: "var(--amber-50, #fffbeb)", fg: "var(--amber-700, #b45309)" };
   if (a === "LOGIN" || a === "ACCOUNT_CREATED" || a === "DOC_APPROVED")
     return { bg: "var(--blue-50, #eff6ff)", fg: "var(--blue-700, #1d4ed8)" };

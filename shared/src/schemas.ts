@@ -103,6 +103,11 @@ export const resetPasswordSchema = z.object({
 });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
+export const adminResetCandidatePasswordSchema = z.object({
+  password: passwordSchema,
+});
+export type AdminResetCandidatePasswordInput = z.infer<typeof adminResetCandidatePasswordSchema>;
+
 export const registerSchema = z
   .object({
     cpf: cpfSchema,
