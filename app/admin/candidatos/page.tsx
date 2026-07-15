@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Avatar, StatusBadge } from "@/components/ui";
-import { IconChevL, IconChevR, IconDownload, IconPrint, IconSearch } from "@/components/icons";
+import { IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
 import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus } from "@prouni/shared";
@@ -130,6 +130,7 @@ function CandidatosInner() {
     .filter(byStatus)
     .filter(byAnalyst)
     .filter(byDate);
+  const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
 
   const tabs: [Tab, string, number][] = [
     ["all", "Todos", all.length],
@@ -147,6 +148,7 @@ function CandidatosInner() {
             <p className="page-subtitle">Gestão completa das inscrições PROUNI · ciclo ativo.</p>
           </div>
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
+            {canRefresh && <button className="btn btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={14} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
             <button className="btn btn-ghost" onClick={() => exportCsv(rows)} disabled={rows.length === 0} title="Baixar a lista atual em CSV">
               <IconDownload size={14} /> Exportar CSV
             </button>

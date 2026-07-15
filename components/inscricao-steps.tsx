@@ -474,7 +474,7 @@ export function StepRendaDespesas({ appId }: { appId: string | null }) {
       <div className="divider" />
 
       <h3 className="section-title">Despesas mensais (último mês)</h3>
-      <p className="muted small" style={{ marginTop: -8, marginBottom: 14 }}>Informe os valores médios do último mês completo. Deixe em branco o que não se aplica.</p>
+      <p className="muted small" style={{ marginTop: -8, marginBottom: 14 }}>Informe os valores médios do último mês completo. Aluguel, prestação do imóvel e parcela de veículo financiado, quando informados na etapa Moradia e bens, já entram automaticamente no total e não devem ser repetidos aqui.</p>
       <div className="form-grid">
         {EXPENSE_LABELS.map((label) => (
           <div key={label} className="field col-6">

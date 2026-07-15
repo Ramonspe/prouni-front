@@ -71,6 +71,7 @@ export interface SessionUser {
   fullName: string;
   email: string;
   role: string;
+  impersonating: boolean;
 }
 export interface AuthResponse {
   accessToken: string;
@@ -255,6 +256,12 @@ export const authApi = {
     apiFetch<{ message: string }>("/auth/reset-password", { method: "POST", body: { cpf, code, password }, auth: false, retry: false }),
   changePassword: (currentPassword: string, newPassword: string) =>
     apiFetch<{ message: string }>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } }),
+  resetCandidatePassword: (candidateId: string, password: string) =>
+    apiFetch<{ message: string }>(`/auth/candidates/${candidateId}/password`, { method: "POST", body: { password } }),
+  impersonate: (candidateId: string) =>
+    apiFetch<AuthResponse>(`/auth/impersonation/${candidateId}/start`, { method: "POST" }),
+  stopImpersonation: () =>
+    apiFetch<AuthResponse>("/auth/impersonation/stop", { method: "POST" }),
   verifyToken: (email: string, code: string) =>
     apiFetch<{ registrationToken: string; email: string }>("/account/verify-token", {
       method: "POST",

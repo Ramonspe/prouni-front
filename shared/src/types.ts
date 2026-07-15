@@ -426,6 +426,9 @@ export interface PreselectionEntryDto {
   enemRegistration: string | null;
   call: PreselectionCall; // chamada (1ª/2ª/espera)
   claimed: boolean; // já virou inscrição (não pode excluir)
+  candidateUserId: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
   createdAt: string;
 }
 
@@ -671,7 +674,10 @@ export type AuditLogAction =
   | "STATUS_CHANGED"
   | "PRESELECTION_IMPORTED"
   | "CONFIG_CHANGED"
-  | "CLIENT_ERROR";
+  | "CLIENT_ERROR"
+  | "CANDIDATE_PASSWORD_RESET"
+  | "IMPERSONATION_STARTED"
+  | "IMPERSONATION_ENDED";
 
 /**
  * Linha da trilha de auditoria para a tela Auditoria → Logs. Reúne ações da equipe,
