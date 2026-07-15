@@ -691,6 +691,15 @@ export interface AuditLogDto {
   createdAt: string; // ISO
 }
 
+/** Um ajuste da renda bruta total feito pela equipe (uso interno). */
+export interface IncomeAdjustmentDto {
+  value: string; // renda bruta total ajustada (decimal em string)
+  previous: string | null; // valor imediatamente anterior (null no 1º ajuste)
+  note: string | null; // justificativa do ajuste
+  at: string; // ISO
+  by: string | null; // nome de quem ajustou
+}
+
 /** Detalhe completo de uma inscrição para a tela de análise (somente leitura — Fase 2). */
 export interface AdminApplicationDetail {
   id: string;
@@ -709,6 +718,8 @@ export interface AdminApplicationDetail {
   /** Renda bruta final apurada pela assistente social (uso interno) e justificativa. */
   analystGrossIncome: string | null;
   analystIncomeNote: string | null;
+  /** Histórico de ajustes da renda bruta total (mais antigo → mais recente). */
+  incomeHistory: IncomeAdjustmentDto[];
   summary: SocioSummaryDto;
   family: FamilyMemberDto[];
   documents: AdminDocumentDto[];
