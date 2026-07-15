@@ -165,6 +165,22 @@ export default function AnalysisPage() {
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
   const busy = reviewMut.isPending || decideMut.isPending || assignMut.isPending;
 
+  // Renda bruta total = (declarada + outras). Se a equipe ajustou (uso interno),
+  // exibe o valor ajustado com o histórico completo das alterações no tooltip.
+  const incomeHistory = d.incomeHistory ?? [];
+  const incomeAdjusted = incomeHistory.length > 0;
+  const rendaBrutaTotal = incomeAdjusted ? d.analystGrossIncome ?? d.summary.totalIncome : d.summary.totalIncome;
+  const incomeHistoryTitle = incomeAdjusted
+    ? "Ajustes da Renda bruta total (uso interno) — mais antigo → mais recente:\n" +
+      incomeHistory
+        .map(
+          (h) =>
+            `• ${new Date(h.at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} — ${h.by ?? "equipe"}: ${fmtMoney(h.previous ?? d.summary.totalIncome)} → ${fmtMoney(h.value)}${h.note ? ` (${h.note})` : ""}`,
+        )
+        .join("\n") +
+      `\n\nValor automático (declarada + outras): ${fmtMoney(d.summary.totalIncome)}`
+    : "";
+
   return (
     <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", `Análise · ${d.name}`]}>
       <div className="content fade-in" style={{ maxWidth: "none", padding: 22 }}>
@@ -332,14 +348,34 @@ export default function AnalysisPage() {
             <div className="card">
               <div className="card-header"><h3 className="h-card-title">Resumo socioeconômico</h3></div>
               <div className="card-body">
-                {[
+                {([
                   ["Grupo familiar", `${d.summary.membersCount} integrante(s)`],
                   ["Renda bruta declarada", fmtMoney(d.summary.grossIncome)],
                   ["Outras rendas", fmtMoney(d.summary.otherIncome)],
+                ] as [string, string][]).map(([l, v], i) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: i ? "1px solid var(--ink-150)" : "none", fontSize: 13 }}>
+                    <span className="muted">{l}</span>
+                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
+                  </div>
+                ))}
+                {/* Renda bruta total = declarada + outras. Exibe o valor ajustado
+                    pela equipe (uso interno), se houver, com o histórico no tooltip. */}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13, alignItems: "center" }}>
+                  <span className="muted">Renda bruta total</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {incomeAdjusted && (
+                      <span title={incomeHistoryTitle} aria-label="Histórico de ajustes da renda bruta total" style={{ display: "inline-flex", cursor: "help", color: "var(--blue-700)" }}>
+                        <IconHistory size={14} />
+                      </span>
+                    )}
+                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: incomeAdjusted ? 700 : 500 }}>{fmtMoney(rendaBrutaTotal)}</span>
+                  </span>
+                </div>
+                {([
                   ["Despesas totais", fmtMoney(d.summary.totalExpenses)],
                   ["Renda per capita", fmtMoney(d.summary.perCapita)],
-                ].map(([l, v], i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: i ? "1px solid var(--ink-150)" : "none", fontSize: 13 }}>
+                ] as [string, string][]).map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13 }}>
                     <span className="muted">{l}</span>
                     <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
                   </div>
@@ -352,19 +388,18 @@ export default function AnalysisPage() {
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Renda bruta apurada · uso interno</h3></div>
+              <div className="card-header"><h3 className="h-card-title">Ajustar Renda bruta total · uso interno</h3></div>
               <div className="card-body">
                 <Banner tone="info" title="Visível apenas para a equipe">
-                  Renda bruta final apurada após a análise documental (ajustes, exclusão de rendimentos não computáveis). Nunca exibida ao candidato.
+                  Ajuste a <strong>Renda bruta total</strong> após a análise documental (correções, exclusão de rendimentos não computáveis). Fica registrado no histórico e nunca é exibido ao candidato.
                 </Banner>
                 <div className="field" style={{ marginTop: 10 }}>
-                  <label className="field-label">Renda bruta final (R$)</label>
+                  <label className="field-label">Renda bruta total ajustada (R$)</label>
                   <input className="input" inputMode="decimal" placeholder="ex.: 3500.00" value={grossIncome} onChange={(e) => setGrossIncome(e.target.value)} />
                 </div>
-                {grossIncome.trim() && d.summary.membersCount > 0 && !Number.isNaN(Number(grossIncome.trim())) && (
+                {d.summary.membersCount > 0 && (
                   <div className="muted small" style={{ marginTop: 6 }}>
-                    Per capita apurada: <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{fmtMoney((Number(grossIncome.trim()) / d.summary.membersCount).toFixed(2))}</span>
-                    {" "}· automática {fmtMoney(d.summary.perCapita)}
+                    Valor automático (declarada + outras): <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{fmtMoney(d.summary.totalIncome)}</span>. O ajuste altera apenas a linha “Renda bruta total” do resumo — a renda per capita e o perfil PROUNI seguem pelo valor declarado.
                   </div>
                 )}
                 <div className="field" style={{ marginTop: 10 }}>
@@ -372,9 +407,9 @@ export default function AnalysisPage() {
                   <textarea className="textarea" rows={3} value={incomeNote} onChange={(e) => setIncomeNote(e.target.value)} placeholder="Ex.: excluído rendimento eventual não computável; correção de holerite…" />
                 </div>
                 {incomeMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(incomeMut.error as Error).message}</p>}
-                {incomeMut.isSuccess && <p className="upload-meta" style={{ marginTop: 8, color: "var(--green-700)" }}>Renda apurada salva.</p>}
+                {incomeMut.isSuccess && <p className="upload-meta" style={{ marginTop: 8, color: "var(--green-700)" }}>Renda bruta total atualizada.</p>}
                 <button className="btn btn-secondary btn-block" style={{ marginTop: 10 }} disabled={incomeMut.isPending} onClick={() => incomeMut.mutate()}>
-                  {incomeMut.isPending ? "Salvando…" : "Salvar renda apurada"}
+                  {incomeMut.isPending ? "Salvando…" : "Salvar ajuste"}
                 </button>
               </div>
             </div>
