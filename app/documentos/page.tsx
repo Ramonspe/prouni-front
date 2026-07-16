@@ -324,7 +324,12 @@ export default function DocumentosPage() {
   const editable = ["iniciada", "pendencia"].includes(status);
   const locked = !editable;
   const sentCount = (uploadedQuery.data ?? []).filter((u) => u.status !== "A_ENVIAR").length;
-  const allRequiredSent = !!data && sentCount >= data.totals.required;
+  const requiredItems = data?.categories.flatMap((category) => category.items.filter((item) => item.required)) ?? [];
+  const sentRequiredCount = requiredItems.filter((item) => {
+    const uploaded = uploadedByKey.get(slotKey(item.typeId, item.member?.id ?? null));
+    return uploaded?.status === "ENVIADO" || uploaded?.status === "APROVADO";
+  }).length;
+  const allRequiredSent = !!data && sentRequiredCount === requiredItems.length;
   const selectedUploaded = selected ? uploadedByKey.get(slotKey(selected.typeId, selected.member?.id ?? null)) : undefined;
 
   const finalizeMut = useMutation({
@@ -392,7 +397,7 @@ export default function DocumentosPage() {
                   <div className="muted small" style={{ marginTop: 2 }}>
                     {allRequiredSent
                       ? "Todos os documentos obrigatórios foram enviados. Você já pode finalizar e enviar para análise."
-                      : `Envie todos os documentos obrigatórios (${sentCount}/${data.totals.required}) para liberar a finalização.`}
+                      : `Envie todos os documentos obrigatórios (${sentRequiredCount}/${data.totals.required}) para liberar a finalização.`}
                   </div>
                   {finalizeMut.isError && (
                     <div className="upload-meta error" style={{ marginTop: 4 }}>{(finalizeMut.error as Error).message}</div>
