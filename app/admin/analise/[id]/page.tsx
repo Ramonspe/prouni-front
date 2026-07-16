@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Avatar, Badge, Banner, PriorityBadge, StatusBadge, Stepper, Timeline } from "@/components/ui";
+import { SocioFormReview } from "@/components/socio-form-review";
 import { IconAlert, IconCheck, IconChevL, IconDownload, IconExternal, IconEye, IconHistory, IconRefresh, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
@@ -12,16 +13,18 @@ import { DECISION_REASONS, type AdminDecisionInput, type AdminDocumentDto, type 
 /**
  * Etapa atual do stepper derivada dos FATOS da inscrição (não só do status):
  * aprovar/enviar documentos não muda o status, então usamos os artefatos reais
- * para refletir o progresso (0=Acesso, 1=Ficha, 2=Documentos, 3=Análise, 4=Resultado).
+ * para refletir o progresso (0=Acesso, 1=Ficha, 2=Documentos, 3=Inscrição enviada,
+ * 4=Análise, 5=Resultado), sem avançar por aprovações parciais.
  */
 function deriveStep(d: {
   status: ProcessStatus;
   docTotals: { sent: number; approved: number };
   summary: { membersCount: number };
 }): number {
-  if (["classificado", "espera", "indeferido", "concedida"].includes(d.status)) return 4;
-  if (d.status === "analise_socio" || d.status === "analise_doc" || d.docTotals.approved > 0) return 3;
-  if (d.status === "enviada" || d.status === "pendencia" || d.docTotals.sent > 0) return 2;
+  if (["classificado", "espera", "indeferido", "concedida"].includes(d.status)) return 5;
+  if (d.status === "analise_socio" || d.status === "analise_doc") return 4;
+  if (d.status === "enviada") return 3;
+  if (d.status === "pendencia" || d.docTotals.sent > 0) return 2;
   if (d.summary.membersCount > 0) return 1;
   return 0;
 }
@@ -64,6 +67,13 @@ export default function AnalysisPage() {
     queryKey: ["admin", "application", params.id],
     queryFn: () => adminApi.application(params.id),
     enabled: !!user && !!params.id,
+    refetchInterval: 15_000,
+  });
+  const socioFormQuery = useQuery({
+    queryKey: ["admin", "application", params.id, "socio-form"],
+    queryFn: () => adminApi.socioForm(params.id),
+    enabled: !!user && !!params.id && ["ADMIN", "ANALYST"].includes(user.role),
+    refetchInterval: 15_000,
   });
   const analystsQuery = useQuery({ queryKey: ["admin", "analysts"], queryFn: () => adminApi.analysts(), enabled: !!user });
   const d = query.data;
@@ -165,6 +175,7 @@ export default function AnalysisPage() {
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
   const busy = reviewMut.isPending || decideMut.isPending || assignMut.isPending;
   const canRefresh = user.role === "ADMIN" || user.role === "ANALYST";
+  const canReviewDocuments = ["enviada", "analise_doc", "analise_socio", "pendencia"].includes(d.status);
 
   // Renda bruta total = (declarada + outras). Se a equipe ajustou (uso interno),
   // exibe o valor ajustado com o histórico completo das alterações no tooltip.
@@ -207,7 +218,7 @@ export default function AnalysisPage() {
             </div>
           </div>
           <div style={{ marginTop: 16 }}>
-            <Stepper steps={["Acesso", "Ficha", "Documentos", "Análise", "Resultado"]} current={deriveStep(d)} />
+            <Stepper steps={["Acesso", "Ficha", "Documentos", "Inscrição enviada", "Análise", "Resultado"]} current={deriveStep(d)} />
           </div>
         </div>
 
@@ -275,10 +286,12 @@ export default function AnalysisPage() {
                             {hasFile && (
                               <>
                                 <button className="btn btn-ghost btn-sm" disabled={viewerLoading} onClick={() => loadViewer(doc)}><IconEye size={13} /> Ver</button>
-                                <button className="btn btn-ghost btn-sm" disabled={busy || doc.status === "APROVADO"}
-                                  onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "APROVADO" })}>Aprovar</button>
-                                <button className="btn btn-ghost btn-sm" disabled={busy}
-                                  onClick={() => { setRejectId(doc.documentId!); setRejectComment(""); }}>Reprovar</button>
+                                {canReviewDocuments && <>
+                                  <button className="btn btn-ghost btn-sm" disabled={busy || doc.status === "APROVADO"}
+                                    onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "APROVADO" })}>Aprovar</button>
+                                  <button className="btn btn-ghost btn-sm" disabled={busy}
+                                    onClick={() => { setRejectId(doc.documentId!); setRejectComment(""); }}>Reprovar</button>
+                                </>}
                               </>
                             )}
                           </div>
@@ -304,6 +317,8 @@ export default function AnalysisPage() {
                 {reviewMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(reviewMut.error as Error).message}</p>}
               </div>
             </div>
+
+            {["ADMIN", "ANALYST"].includes(user.role) && <SocioFormReview socioForm={socioFormQuery.data ?? null} />}
 
             <div className="card">
               <div className="card-header">

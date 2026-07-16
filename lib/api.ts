@@ -350,6 +350,7 @@ export const adminApi = {
     return apiFetch<AdminApplicationRow[]>(`/admin/applications${s ? `?${s}` : ""}`);
   },
   application: (id: string) => apiFetch<AdminApplicationDetail>(`/admin/applications/${id}`),
+  socioForm: (id: string) => apiFetch<SocioFormDto | null>(`/admin/applications/${id}/socio-form`),
   analysts: () => apiFetch<AdminAnalystDto[]>("/admin/analysts"),
   stats: () => apiFetch<AdminStatsDto>("/admin/stats"),
   /** Trilha de auditoria (Auditoria → Logs). Restrito a ADMIN no servidor. */

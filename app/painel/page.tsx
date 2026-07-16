@@ -53,10 +53,10 @@ function CursoEditor({ appId, currentCourseId, campusCode }: { appId: string; cu
   );
 }
 
-const STEP_LABELS = ["Acesso", "Ficha socioeconômica", "Upload de documentos", "Análise", "Resultado"];
+const STEP_LABELS = ["Acesso", "Ficha socioeconômica", "Upload de documentos", "Inscrição enviada", "Análise", "Resultado"];
 const STEP_BY_STATUS: Record<ProcessStatus, number> = {
-  iniciada: 1, enviada: 3, analise_doc: 3, pendencia: 2, analise_socio: 3,
-  classificado: 4, espera: 4, indeferido: 4, concedida: 4,
+  iniciada: 1, enviada: 3, analise_doc: 4, pendencia: 2, analise_socio: 4,
+  classificado: 5, espera: 5, indeferido: 5, concedida: 5,
 };
 const SCHOLARSHIP_LABEL: Record<string, string> = { INTEGRAL: "Integral · 100%", PARCIAL: "Parcial · 50%" };
 
