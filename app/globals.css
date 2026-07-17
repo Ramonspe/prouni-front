@@ -568,6 +568,29 @@ a { color: var(--blue-700); text-decoration: none; }
   background: var(--ink-50);
   border-bottom: 1px solid var(--ink-200);
 }
+.table-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.table-sort-button:hover,
+.table-sort-button:focus-visible,
+.table-sort-button.active {
+  color: var(--blue-700);
+}
+.table-sort-button:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
 .table tbody td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--ink-150);

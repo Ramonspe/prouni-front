@@ -15,6 +15,7 @@ const STEP_BY_STATUS: Record<ProcessStatus, number> = {
   analise_doc: 4,
   pendencia: 2,
   analise_socio: 4,
+  analise_concluida: 5,
   classificado: 5,
   espera: 5,
   indeferido: 5,

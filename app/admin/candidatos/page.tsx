@@ -4,12 +4,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Avatar, StatusBadge } from "@/components/ui";
-import { IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch } from "@/components/icons";
+import { IconArrowDown, IconArrowUp, IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
 import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus } from "@prouni/shared";
 
 type Tab = "all" | "review" | "pending" | "decided";
+type SortKey = "protocol" | "name" | "status" | "updatedAt";
+type SortDirection = "asc" | "desc";
 const DECIDED: ProcessStatus[] = ["classificado", "espera", "indeferido", "concedida"];
 function callLabel(c: PreselectionCall): string {
   return PRESELECTION_CALLS.find((x) => x.value === c)?.label ?? c;
@@ -72,6 +74,8 @@ function CandidatosInner() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [analystFilter, setAnalystFilter] = useState("all"); // "all" | "none" | nome do analista
   const [dateFilter, setDateFilter] = useState("all"); // "all" | dias ("1" | "7" | "30")
+  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   // Busca vinda da barra do topo (?q=) — sincroniza quando a URL muda.
   useEffect(() => {
     const q = searchParams.get("q");
@@ -123,14 +127,51 @@ function CandidatosInner() {
     const cutoff = Date.now() - Number(dateFilter) * 86_400_000;
     return new Date(c.updatedAt).getTime() >= cutoff;
   };
-  const rows = all
-    .filter(byTab)
-    .filter(bySearch)
-    .filter(byCourse)
-    .filter(byStatus)
-    .filter(byAnalyst)
-    .filter(byDate);
+  const rows = useMemo(() => {
+    const compareText = (a: string, b: string) => a.localeCompare(b, "pt-BR", { sensitivity: "base" });
+    const multiplier = sortDirection === "asc" ? 1 : -1;
+
+    return all
+      .filter(byTab)
+      .filter(bySearch)
+      .filter(byCourse)
+      .filter(byStatus)
+      .filter(byAnalyst)
+      .filter(byDate)
+      .sort((a, b) => {
+        if (sortKey === "updatedAt") return (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()) * multiplier;
+        if (sortKey === "status") return compareText(STATUS_MAP[a.status].label, STATUS_MAP[b.status].label) * multiplier;
+        return compareText(a[sortKey], b[sortKey]) * multiplier;
+      });
+  }, [all, analystFilter, callFilter, courseFilter, dateFilter, search, sortDirection, sortKey, statusFilter, tab]);
   const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
+
+  const sortHeader = (key: SortKey, label: string) => {
+    const isActive = key === sortKey;
+    const directionLabel = isActive && sortDirection === "asc" ? "crescente" : "decrescente";
+    const SortIcon = isActive && sortDirection === "asc" ? IconArrowUp : IconArrowDown;
+
+    return (
+      <button
+        type="button"
+        className={`table-sort-button ${isActive ? "active" : ""}`}
+        onClick={() => toggleSort(key)}
+        aria-label={`Ordenar por ${label}${isActive ? `, atualmente em ordem ${directionLabel}` : ""}`}
+        title={`Ordenar por ${label}${isActive ? ` (${directionLabel})` : ""}`}
+      >
+        {label} <SortIcon size={13} stroke={2.25} aria-hidden="true" />
+      </button>
+    );
+  };
 
   const tabs: [Tab, string, number][] = [
     ["all", "Todos", all.length],
@@ -205,8 +246,12 @@ function CandidatosInner() {
           <table className="table">
             <thead>
               <tr>
-                <th>Protocolo</th><th>Candidato</th><th>Curso</th><th>Chamada</th><th>Status</th>
-                <th>Renda per capita</th><th>Docs</th><th>Analista</th><th>Atualização</th><th></th>
+                <th aria-sort={sortKey === "protocol" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("protocol", "Protocolo")}</th>
+                <th aria-sort={sortKey === "name" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("name", "Candidato")}</th>
+                <th>Curso</th><th>Chamada</th>
+                <th aria-sort={sortKey === "status" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("status", "Status")}</th>
+                <th>Renda per capita</th><th>Docs</th><th>Analista</th>
+                <th aria-sort={sortKey === "updatedAt" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("updatedAt", "Atualização")}</th><th></th>
               </tr>
             </thead>
             <tbody>

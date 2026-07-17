@@ -25,6 +25,8 @@ function eventTone(toStatus: string | null): { tone: BadgeTone; tag: string; kin
   switch (toStatus) {
     case "pendencia":
       return { tone: "warning", tag: "Pendência", kind: "pendencia" };
+    case "analise_concluida":
+      return { tone: "info", tag: "Análise", kind: "status" };
     case "classificado":
     case "concedida":
       return { tone: "success", tag: "Resultado", kind: "parecer" };

@@ -5,11 +5,12 @@ import type { ProcessStatus, StatusMeta } from "./types";
  * (ApplicationStatus, em UPPER_CASE) e o front (lower_snake_case).
  */
 export const STATUS_MAP: Record<ProcessStatus, StatusMeta> = {
-  iniciada: { tone: "neutral", label: "Inscrição iniciada" },
-  enviada: { tone: "info", label: "Inscrição enviada" },
+  iniciada: { tone: "warning", label: "Inscrição iniciada" },
+  enviada: { tone: "success", label: "Inscrição enviada" },
   analise_doc: { tone: "info", label: "Em análise documental" },
   pendencia: { tone: "warning", label: "Pendência documental" },
   analise_socio: { tone: "info", label: "Em análise socioeconômica" },
+  analise_concluida: { tone: "info", label: "Análise concluída" },
   classificado: { tone: "success", label: "Classificado" },
   espera: { tone: "warning", label: "Lista de espera" },
   indeferido: { tone: "danger", label: "Indeferido" },

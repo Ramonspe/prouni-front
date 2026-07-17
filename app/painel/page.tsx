@@ -56,6 +56,7 @@ function CursoEditor({ appId, currentCourseId, campusCode }: { appId: string; cu
 const STEP_LABELS = ["Acesso", "Ficha socioeconômica", "Upload de documentos", "Inscrição enviada", "Análise", "Resultado"];
 const STEP_BY_STATUS: Record<ProcessStatus, number> = {
   iniciada: 1, enviada: 3, analise_doc: 4, pendencia: 2, analise_socio: 4,
+  analise_concluida: 5,
   classificado: 5, espera: 5, indeferido: 5, concedida: 5,
 };
 const SCHOLARSHIP_LABEL: Record<string, string> = { INTEGRAL: "Integral · 100%", PARCIAL: "Parcial · 50%" };
@@ -178,6 +179,14 @@ export default function PainelPage() {
               <div style={{ marginBottom: 18 }}>
                 <Banner tone="info" title="Inscrição recebida — em análise">
                   Sua documentação foi enviada e está em análise pela equipe de Bolsas. <strong>O resultado é divulgado pelo MEC</strong> no portal do Prouni (acessounico.mec.gov.br/prouni).
+                </Banner>
+              </div>
+            )}
+
+            {data.status === "analise_concluida" && (
+              <div style={{ marginBottom: 18 }}>
+                <Banner tone="info" title="Análise concluída">
+                  A análise da sua documentação foi concluída. Consultar o resultado no portal do Prouni (acessounico.mec.gov.br/prouni), de acordo com o cronograma divulgado pelo MEC.
                 </Banner>
               </div>
             )}
