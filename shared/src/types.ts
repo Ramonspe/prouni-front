@@ -6,6 +6,7 @@ export type ProcessStatus =
   | "analise_doc"
   | "pendencia"
   | "analise_socio"
+  | "analise_concluida"
   | "classificado"
   | "espera"
   | "indeferido"

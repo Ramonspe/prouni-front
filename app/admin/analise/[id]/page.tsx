@@ -3,12 +3,38 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
-import { Avatar, Badge, Banner, PriorityBadge, StatusBadge, Stepper, Timeline } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  Banner,
+  PriorityBadge,
+  StatusBadge,
+  Stepper,
+  Timeline,
+} from "@/components/ui";
 import { SocioFormReview } from "@/components/socio-form-review";
-import { IconAlert, IconCheck, IconChevL, IconDownload, IconExternal, IconEye, IconHistory, IconRefresh, IconUpload, IconUser, IconX } from "@/components/icons";
+import {
+  IconAlert,
+  IconCheck,
+  IconChevL,
+  IconDownload,
+  IconExternal,
+  IconEye,
+  IconHistory,
+  IconRefresh,
+  IconUpload,
+  IconUser,
+  IconX,
+} from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
-import { DECISION_REASONS, type AdminDecisionInput, type AdminDocumentDto, type DocumentStatusDb, type ProcessStatus } from "@prouni/shared";
+import {
+  DECISION_REASONS,
+  type AdminDecisionInput,
+  type AdminDocumentDto,
+  type DocumentStatusDb,
+  type ProcessStatus,
+} from "@prouni/shared";
 
 /**
  * Etapa atual do stepper derivada dos FATOS da inscrição (não só do status):
@@ -21,41 +47,73 @@ function deriveStep(d: {
   docTotals: { sent: number; approved: number };
   summary: { membersCount: number };
 }): number {
-  if (["classificado", "espera", "indeferido", "concedida"].includes(d.status)) return 5;
+  if (["classificado", "espera", "indeferido", "concedida"].includes(d.status))
+    return 5;
   if (d.status === "analise_socio" || d.status === "analise_doc") return 4;
   if (d.status === "enviada") return 3;
   if (d.status === "pendencia" || d.docTotals.sent > 0) return 2;
   if (d.summary.membersCount > 0) return 1;
   return 0;
 }
-const DECISIONS: { id: AdminDecisionInput["decision"]; label: string; tone: "success" | "warning" | "info" | "danger" }[] = [
+const DECISIONS: {
+  id: AdminDecisionInput["decision"];
+  label: string;
+  tone: "success" | "warning" | "info" | "danger";
+}[] = [
   { id: "CLASSIFICAR", label: "Classificar", tone: "success" },
   { id: "PENDENCIA", label: "Solicitar pendência", tone: "warning" },
   { id: "LISTA_ESPERA", label: "Lista de espera", tone: "info" },
   { id: "INDEFERIR", label: "Indeferir", tone: "danger" },
 ];
-const toneVar = (t: string) => (t === "success" ? "green" : t === "warning" ? "amber" : t === "info" ? "blue" : "red");
+const toneVar = (t: string) =>
+  t === "success"
+    ? "green"
+    : t === "warning"
+      ? "amber"
+      : t === "info"
+        ? "blue"
+        : "red";
 
 function fmtMoney(v: string | null): string {
   if (v == null) return "—";
   const n = Number(v);
-  return Number.isNaN(n) ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return Number.isNaN(n)
+    ? "—"
+    : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 function fmtWhen(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
-function docVisual(status: DocumentStatusDb): { cls: string; tone: "success" | "warning" | "danger" | "neutral"; label: string } {
+function docVisual(status: DocumentStatusDb): {
+  cls: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+  label: string;
+} {
   switch (status) {
-    case "APROVADO": return { cls: "has-file", tone: "success", label: "Aprovado" };
-    case "ENVIADO": return { cls: "has-pending", tone: "warning", label: "Enviado · em análise" };
-    case "REPROVADO": return { cls: "has-rejected", tone: "danger", label: "Reprovado" };
-    default: return { cls: "", tone: "neutral", label: "A enviar" };
+    case "APROVADO":
+      return { cls: "has-file", tone: "success", label: "Aprovado" };
+    case "ENVIADO":
+      return {
+        cls: "has-pending",
+        tone: "warning",
+        label: "Enviado · em análise",
+      };
+    case "REPROVADO":
+      return { cls: "has-rejected", tone: "danger", label: "Reprovado" };
+    default:
+      return { cls: "", tone: "neutral", label: "A enviar" };
   }
 }
-const PROFILE: Record<string, { tone: "success" | "warning"; label: string }> = {
-  INTEGRAL: { tone: "success", label: "Integral elegível" },
-  PARCIAL: { tone: "warning", label: "Parcial elegível" },
-};
+const PROFILE: Record<string, { tone: "success" | "warning"; label: string }> =
+  {
+    INTEGRAL: { tone: "success", label: "Integral elegível" },
+    PARCIAL: { tone: "warning", label: "Parcial elegível" },
+  };
 
 export default function AnalysisPage() {
   const { user } = useRequireStaff();
@@ -75,16 +133,28 @@ export default function AnalysisPage() {
     enabled: !!user && !!params.id && ["ADMIN", "ANALYST"].includes(user.role),
     refetchInterval: 15_000,
   });
-  const analystsQuery = useQuery({ queryKey: ["admin", "analysts"], queryFn: () => adminApi.analysts(), enabled: !!user });
+  const analystsQuery = useQuery({
+    queryKey: ["admin", "analysts"],
+    queryFn: () => adminApi.analysts(),
+    enabled: !!user,
+  });
   const d = query.data;
 
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectComment, setRejectComment] = useState("");
   const [parecer, setParecer] = useState("");
-  const [decision, setDecision] = useState<AdminDecisionInput["decision"] | "">("");
+  const [decision, setDecision] = useState<AdminDecisionInput["decision"] | "">(
+    "",
+  );
   const [kind, setKind] = useState<"INTEGRAL" | "PARCIAL" | "">("");
   const [reason, setReason] = useState("");
-  const [viewer, setViewer] = useState<{ documentId: string; url: string; mime: string; fileName: string; status: DocumentStatusDb } | null>(null);
+  const [viewer, setViewer] = useState<{
+    documentId: string;
+    url: string;
+    mime: string;
+    fileName: string;
+    status: DocumentStatusDb;
+  } | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
   const [grossIncome, setGrossIncome] = useState("");
@@ -92,7 +162,8 @@ export default function AnalysisPage() {
 
   // Ao trocar/abrir um documento, rola suavemente até o visualizador.
   useEffect(() => {
-    if (viewer || viewerLoading) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (viewer || viewerLoading)
+      viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [viewer?.documentId, viewerLoading]);
 
   // Sincroniza o campo de renda apurada com o valor salvo (ao carregar/após salvar).
@@ -107,17 +178,35 @@ export default function AnalysisPage() {
   };
 
   const reviewMut = useMutation({
-    mutationFn: (v: { documentId: string; decision: "APROVADO" | "REPROVADO"; comment?: string }) =>
-      adminApi.reviewDocument(v.documentId, { decision: v.decision, comment: v.comment }),
-    onSuccess: () => { invalidate(); setRejectId(null); setRejectComment(""); },
+    mutationFn: (v: {
+      documentId: string;
+      decision: "APROVADO" | "REPROVADO";
+      comment?: string;
+    }) =>
+      adminApi.reviewDocument(v.documentId, {
+        decision: v.decision,
+        comment: v.comment,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setRejectId(null);
+      setRejectComment("");
+    },
   });
   const assignMut = useMutation({
-    mutationFn: (analystId: string | null) => adminApi.assignAnalyst(params.id, analystId),
+    mutationFn: (analystId: string | null) =>
+      adminApi.assignAnalyst(params.id, analystId),
     onSuccess: invalidate,
   });
   const decideMut = useMutation({
     mutationFn: (body: AdminDecisionInput) => adminApi.decide(params.id, body),
-    onSuccess: () => { invalidate(); setParecer(""); setDecision(""); setKind(""); setReason(""); },
+    onSuccess: () => {
+      invalidate();
+      setParecer("");
+      setDecision("");
+      setKind("");
+      setReason("");
+    },
   });
   const startMut = useMutation({
     mutationFn: () => adminApi.startAnalysis(params.id),
@@ -132,7 +221,11 @@ export default function AnalysisPage() {
     onSuccess: invalidate,
   });
   const incomeMut = useMutation({
-    mutationFn: () => adminApi.setIncome(params.id, { grossIncome: grossIncome.trim() || null, note: incomeNote.trim() || null }),
+    mutationFn: () =>
+      adminApi.setIncome(params.id, {
+        grossIncome: grossIncome.trim() || null,
+        note: incomeNote.trim() || null,
+      }),
     onSuccess: invalidate,
   });
 
@@ -143,7 +236,13 @@ export default function AnalysisPage() {
       const { url, mime } = await adminApi.documentFile(doc.documentId);
       setViewer((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
-        return { documentId: doc.documentId!, url, mime, fileName: doc.fileName ?? "documento", status: doc.status };
+        return {
+          documentId: doc.documentId!,
+          url,
+          mime,
+          fileName: doc.fileName ?? "documento",
+          status: doc.status,
+        };
       });
     } catch {
       alert("Não foi possível abrir o arquivo.");
@@ -154,34 +253,73 @@ export default function AnalysisPage() {
 
   if (query.isLoading || !user) {
     return (
-      <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}>
-        <div className="content fade-in"><div className="card card-pad muted">Carregando inscrição…</div></div>
+      <AppShell
+        role="admin"
+        crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}
+      >
+        <div className="content fade-in">
+          <div className="card card-pad muted">Carregando inscrição…</div>
+        </div>
       </AppShell>
     );
   }
   if (query.isError || !d) {
     return (
-      <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}>
+      <AppShell
+        role="admin"
+        crumbs={["PROUNI · Admin", "Candidatos", "Análise"]}
+      >
         <div className="content fade-in">
-          <button className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }} onClick={() => router.push("/admin/candidatos")}>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ marginBottom: 12 }}
+            onClick={() => router.push("/admin/candidatos")}
+          >
             <IconChevL size={13} /> Voltar à fila
           </button>
-          <Banner tone="warn" title="Inscrição não encontrada">Não foi possível carregar esta inscrição.</Banner>
+          <Banner tone="warn" title="Inscrição não encontrada">
+            Não foi possível carregar esta inscrição.
+          </Banner>
         </div>
       </AppShell>
     );
   }
 
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
-  const busy = reviewMut.isPending || decideMut.isPending || assignMut.isPending;
+  const busy =
+    reviewMut.isPending || decideMut.isPending || assignMut.isPending || startMut.isPending;
   const canRefresh = user.role === "ADMIN" || user.role === "ANALYST";
-  const canReviewDocuments = ["enviada", "analise_doc", "analise_socio", "pendencia"].includes(d.status);
+  const reviewableStatus = [
+    "analise_doc",
+    "analise_socio",
+    "pendencia",
+  ].includes(d.status);
+  const assignedAnalystId =
+    analystsQuery.data?.find((analyst) => analyst.name === d.analyst)?.id ?? null;
+  const canStartAnalysis =
+    d.status === "enviada" && assignedAnalystId === user.id;
+  const canPerformAnalystActions =
+    reviewableStatus && assignedAnalystId === user.id;
+  const reviewBlockedMessage = !assignedAnalystId
+      ? "Atribua um analista responsável antes de aprovar ou reprovar documentos."
+      : d.status === "enviada"
+        ? canStartAnalysis
+          ? "Confirme a atribuição para iniciar a análise e liberar a revisão dos documentos."
+          : "Aguardando o analista responsável confirmar o início da análise."
+        : !reviewableStatus
+          ? "A inscrição precisa estar em análise documental para permitir a revisão dos documentos."
+      : assignedAnalystId !== user.id
+        ? `A aprovação ou reprovação é exclusiva do analista responsável${d.analyst ? `: ${d.analyst}.` : "."}`
+        : null;
+  const canReviewDocuments = !reviewBlockedMessage;
 
   // Renda bruta total = (declarada + outras). Se a equipe ajustou (uso interno),
   // exibe o valor ajustado com o histórico completo das alterações no tooltip.
   const incomeHistory = d.incomeHistory ?? [];
   const incomeAdjusted = incomeHistory.length > 0;
-  const rendaBrutaTotal = incomeAdjusted ? d.analystGrossIncome ?? d.summary.totalIncome : d.summary.totalIncome;
+  const rendaBrutaTotal = incomeAdjusted
+    ? (d.analystGrossIncome ?? d.summary.totalIncome)
+    : d.summary.totalIncome;
   const incomeHistoryTitle = incomeAdjusted
     ? "Ajustes da Renda bruta total (uso interno) — mais antigo → mais recente:\n" +
       incomeHistory
@@ -194,31 +332,74 @@ export default function AnalysisPage() {
     : "";
 
   return (
-    <AppShell role="admin" crumbs={["PROUNI · Admin", "Candidatos", `Análise · ${d.name}`]}>
-      <div className="content fade-in" style={{ maxWidth: "none", padding: 22 }}>
+    <AppShell
+      role="admin"
+      crumbs={["PROUNI · Admin", "Candidatos", `Análise · ${d.name}`]}
+    >
+      <div
+        className="content fade-in"
+        style={{ maxWidth: "none", padding: 22 }}
+      >
         {/* Cabeçalho */}
         <div className="card card-pad" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => router.push("/admin/candidatos")}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => router.push("/admin/candidatos")}
+            >
               <IconChevL size={13} /> Voltar à fila
             </button>
-            {canRefresh && <button className="btn btn-ghost btn-sm" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={13} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
+            {canRefresh && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => query.refetch()}
+                disabled={query.isFetching}
+              >
+                <IconRefresh size={13} />{" "}
+                {query.isFetching ? "Atualizando…" : "Atualizar"}
+              </button>
+            )}
             <Avatar name={d.name} size={42} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "var(--ink-900)" }}>{d.name}</h2>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 17,
+                    fontWeight: 600,
+                    color: "var(--ink-900)",
+                  }}
+                >
+                  {d.name}
+                </h2>
                 <StatusBadge status={d.status} />
                 <PriorityBadge priority={d.priority} />
-                {d.optsForQuota && <Badge tone="info" dot={false}>Optante por cotas</Badge>}
+                {d.optsForQuota && (
+                  <Badge tone="info" dot={false}>
+                    Optante por cotas
+                  </Badge>
+                )}
               </div>
               <div className="muted small" style={{ marginTop: 2 }}>
-                <span className="mono">{d.protocol}</span> · CPF <span className="mono">{d.cpf}</span> · {d.course}
-                {d.campus ? ` · ${d.campus}` : ""} · inscrição {fmtWhen(d.createdAt)}
+                <span className="mono">{d.protocol}</span> · CPF{" "}
+                <span className="mono">{d.cpf}</span> · {d.course}
+                {d.campus ? ` · ${d.campus}` : ""} · inscrição{" "}
+                {fmtWhen(d.createdAt)}
               </div>
             </div>
           </div>
           <div style={{ marginTop: 16 }}>
-            <Stepper steps={["Acesso", "Ficha", "Documentos", "Inscrição enviada", "Análise", "Resultado"]} current={deriveStep(d)} />
+            <Stepper
+              steps={[
+                "Acesso",
+                "Ficha",
+                "Documentos",
+                "Inscrição enviada",
+                "Análise",
+                "Resultado",
+              ]}
+              current={deriveStep(d)}
+            />
           </div>
         </div>
 
@@ -226,27 +407,92 @@ export default function AnalysisPage() {
           {/* Esquerda */}
           <div>
             {(viewer || viewerLoading) && (
-              <div ref={viewerRef} className="card" style={{ marginBottom: 14, padding: 0, overflow: "hidden", scrollMarginTop: 80 }}>
+              <div
+                ref={viewerRef}
+                className="card"
+                style={{
+                  marginBottom: 14,
+                  padding: 0,
+                  overflow: "hidden",
+                  scrollMarginTop: 80,
+                }}
+              >
                 <div className="viewer">
                   <div className="viewer-toolbar">
                     {viewer && (
                       <>
-                        <a className="btn btn-ghost btn-sm" href={viewer.url} target="_blank" rel="noopener noreferrer"><IconExternal size={13} /> Abrir em nova aba</a>
-                        <a className="btn btn-ghost btn-sm" href={viewer.url} download={viewer.fileName}><IconDownload size={13} /> Baixar</a>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { URL.revokeObjectURL(viewer.url); setViewer(null); }}><IconX size={13} /> Fechar</button>
+                        <a
+                          className="btn btn-ghost btn-sm"
+                          href={viewer.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <IconExternal size={13} /> Abrir em nova aba
+                        </a>
+                        <a
+                          className="btn btn-ghost btn-sm"
+                          href={viewer.url}
+                          download={viewer.fileName}
+                        >
+                          <IconDownload size={13} /> Baixar
+                        </a>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            URL.revokeObjectURL(viewer.url);
+                            setViewer(null);
+                          }}
+                        >
+                          <IconX size={13} /> Fechar
+                        </button>
                       </>
                     )}
-                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, color: "var(--ink-500)", fontSize: 12 }}>
-                      {viewer && <><span className="mono">{viewer.fileName}</span><Badge tone={docVisual(viewer.status).tone}>{docVisual(viewer.status).label}</Badge></>}
+                    <div
+                      style={{
+                        marginLeft: "auto",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        color: "var(--ink-500)",
+                        fontSize: 12,
+                      }}
+                    >
+                      {viewer && (
+                        <>
+                          <span className="mono">{viewer.fileName}</span>
+                          <Badge tone={docVisual(viewer.status).tone}>
+                            {docVisual(viewer.status).label}
+                          </Badge>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="viewer-body" style={{ padding: 0 }}>
                     {viewerLoading ? (
-                      <div className="muted small" style={{ padding: 28 }}>Carregando documento…</div>
+                      <div className="muted small" style={{ padding: 28 }}>
+                        Carregando documento…
+                      </div>
                     ) : viewer && viewer.mime.startsWith("image/") ? (
-                      <img src={viewer.url} alt={viewer.fileName} style={{ maxWidth: "100%", maxHeight: 600, objectFit: "contain" }} />
+                      <img
+                        src={viewer.url}
+                        alt={viewer.fileName}
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: 600,
+                          objectFit: "contain",
+                        }}
+                      />
                     ) : viewer ? (
-                      <iframe src={viewer.url} title={viewer.fileName} style={{ width: "100%", height: 600, border: "none", background: "#fff" }} />
+                      <iframe
+                        src={viewer.url}
+                        title={viewer.fileName}
+                        style={{
+                          width: "100%",
+                          height: 600,
+                          border: "none",
+                          background: "#fff",
+                        }}
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -257,89 +503,232 @@ export default function AnalysisPage() {
               <div className="card-header">
                 <h3 className="h-card-title">Documentos enviados</h3>
                 <span className="muted small" style={{ marginLeft: "auto" }}>
-                  {d.docTotals.approved} aprovados · {d.docTotals.sent} enviados · {d.docTotals.required} exigidos
+                  {d.docTotals.approved} aprovados · {d.docTotals.sent} enviados
+                  · {d.docTotals.required} exigidos
                 </span>
               </div>
               <div style={{ padding: 14 }}>
+                <Banner
+                  tone={reviewBlockedMessage ? "warn" : "info"}
+                  title="Regra da revisão documental"
+                >
+                  {reviewBlockedMessage ??
+                    "Você é o analista responsável desta inscrição e pode aprovar ou reprovar os documentos."}
+                </Banner>
                 {d.documents.length === 0 ? (
-                  <div className="muted small">Nenhum documento enviado até o momento.</div>
+                  <div className="muted small" style={{ marginTop: 12 }}>
+                    Nenhum documento enviado até o momento.
+                  </div>
                 ) : (
                   d.documents.map((doc: AdminDocumentDto, i) => {
-                    const v = docVisual(doc.status);
-                    const hasFile = doc.status !== "A_ENVIAR" && !!doc.documentId;
-                    return (
-                      <div key={doc.documentId ?? `${doc.documentTypeId}-${i}`}>
-                        <div className={`upload-row ${v.cls}`} style={{ cursor: "default" }}>
-                          <div className="upload-icon">
-                            {doc.status === "APROVADO" ? <IconCheck size={17} stroke={2.4} /> : doc.status === "REPROVADO" ? <IconAlert size={16} /> : <IconUpload size={16} />}
-                          </div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div className="upload-title">{doc.name}</div>
-                            <div className="upload-meta" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {doc.memberName ? <><IconUser size={11} /> {doc.memberName} · </> : null}
-                              {doc.category}{doc.fileName ? ` · ${doc.fileName}` : ""}
+                      const v = docVisual(doc.status);
+                      const hasFile =
+                        doc.status !== "A_ENVIAR" && !!doc.documentId;
+                      return (
+                        <div
+                          key={doc.documentId ?? `${doc.documentTypeId}-${i}`}
+                        >
+                          <div
+                            className={`upload-row ${v.cls}`}
+                            style={{ cursor: "default" }}
+                          >
+                            <div className="upload-icon">
+                              {doc.status === "APROVADO" ? (
+                                <IconCheck size={17} stroke={2.4} />
+                              ) : doc.status === "REPROVADO" ? (
+                                <IconAlert size={16} />
+                              ) : (
+                                <IconUpload size={16} />
+                              )}
                             </div>
-                            {doc.reviewComment && <div className="upload-meta error">{doc.reviewComment}</div>}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div className="upload-title">{doc.name}</div>
+                              <div
+                                className="upload-meta"
+                                style={{
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {doc.memberName ? (
+                                  <>
+                                    <IconUser size={11} /> {doc.memberName}{" "}
+                                    ·{" "}
+                                  </>
+                                ) : null}
+                                {doc.category}
+                                {doc.fileName ? ` · ${doc.fileName}` : ""}
+                              </div>
+                              {doc.reviewComment && (
+                                <div className="upload-meta error">
+                                  {doc.reviewComment}
+                                </div>
+                              )}
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <Badge tone={v.tone}>{v.label}</Badge>
+                              {hasFile && (
+                                <>
+                                  <button
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={viewerLoading}
+                                    onClick={() => loadViewer(doc)}
+                                  >
+                                    <IconEye size={13} /> Ver
+                                  </button>
+                                  {canReviewDocuments && (
+                                    <>
+                                      <button
+                                        className="btn btn-ghost btn-sm"
+                                        disabled={
+                                          busy || doc.status === "APROVADO"
+                                        }
+                                        onClick={() =>
+                                          reviewMut.mutate({
+                                            documentId: doc.documentId!,
+                                            decision: "APROVADO",
+                                          })
+                                        }
+                                      >
+                                        Aprovar
+                                      </button>
+                                      <button
+                                        className="btn btn-ghost btn-sm"
+                                        disabled={busy}
+                                        onClick={() => {
+                                          setRejectId(doc.documentId!);
+                                          setRejectComment("");
+                                        }}
+                                      >
+                                        Reprovar
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <Badge tone={v.tone}>{v.label}</Badge>
-                            {hasFile && (
-                              <>
-                                <button className="btn btn-ghost btn-sm" disabled={viewerLoading} onClick={() => loadViewer(doc)}><IconEye size={13} /> Ver</button>
-                                {canReviewDocuments && <>
-                                  <button className="btn btn-ghost btn-sm" disabled={busy || doc.status === "APROVADO"}
-                                    onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "APROVADO" })}>Aprovar</button>
-                                  <button className="btn btn-ghost btn-sm" disabled={busy}
-                                    onClick={() => { setRejectId(doc.documentId!); setRejectComment(""); }}>Reprovar</button>
-                                </>}
-                              </>
-                            )}
-                          </div>
+                          {rejectId === doc.documentId && (
+                            <div
+                              className="card-pad"
+                              style={{
+                                background: "var(--ink-50)",
+                                borderRadius: 8,
+                                margin: "4px 0 10px",
+                                padding: 12,
+                              }}
+                            >
+                              <div
+                                className="field-label"
+                                style={{ marginBottom: 6 }}
+                              >
+                                Motivo da reprovação (vai para o candidato)
+                              </div>
+                              <textarea
+                                className="textarea"
+                                rows={2}
+                                value={rejectComment}
+                                onChange={(e) =>
+                                  setRejectComment(e.target.value)
+                                }
+                                placeholder="Ex.: imagem ilegível, documento incompleto…"
+                              />
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  marginTop: 8,
+                                }}
+                              >
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={busy || !rejectComment.trim()}
+                                  onClick={() =>
+                                    reviewMut.mutate({
+                                      documentId: doc.documentId!,
+                                      decision: "REPROVADO",
+                                      comment: rejectComment.trim(),
+                                    })
+                                  }
+                                >
+                                  Confirmar reprovação
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setRejectId(null)}
+                                >
+                                  <IconX size={12} /> Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        {rejectId === doc.documentId && (
-                          <div className="card-pad" style={{ background: "var(--ink-50)", borderRadius: 8, margin: "4px 0 10px", padding: 12 }}>
-                            <div className="field-label" style={{ marginBottom: 6 }}>Motivo da reprovação (vai para o candidato)</div>
-                            <textarea className="textarea" rows={2} value={rejectComment} onChange={(e) => setRejectComment(e.target.value)}
-                              placeholder="Ex.: imagem ilegível, documento incompleto…" />
-                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                              <button className="btn btn-secondary btn-sm" disabled={busy || !rejectComment.trim()}
-                                onClick={() => reviewMut.mutate({ documentId: doc.documentId!, decision: "REPROVADO", comment: rejectComment.trim() })}>
-                                Confirmar reprovação
-                              </button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => setRejectId(null)}><IconX size={12} /> Cancelar</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
+                      );
                   })
                 )}
-                {reviewMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(reviewMut.error as Error).message}</p>}
+                {reviewMut.isError && (
+                  <p className="upload-meta error" style={{ marginTop: 8 }}>
+                    {(reviewMut.error as Error).message}
+                  </p>
+                )}
               </div>
             </div>
 
-            {["ADMIN", "ANALYST"].includes(user.role) && <SocioFormReview socioForm={socioFormQuery.data ?? null} />}
+            {["ADMIN", "ANALYST"].includes(user.role) && (
+              <SocioFormReview socioForm={socioFormQuery.data ?? null} />
+            )}
 
             <div className="card">
               <div className="card-header">
                 <h3 className="h-card-title">Grupo familiar</h3>
-                <span className="muted small" style={{ marginLeft: "auto" }}>{d.family.length} integrante(s)</span>
+                <span className="muted small" style={{ marginLeft: "auto" }}>
+                  {d.family.length} integrante(s)
+                </span>
               </div>
               <div style={{ padding: 14 }}>
                 {d.family.length === 0 ? (
-                  <div className="muted small">Grupo familiar ainda não preenchido.</div>
+                  <div className="muted small">
+                    Grupo familiar ainda não preenchido.
+                  </div>
                 ) : (
                   d.family.map((m) => (
-                    <div key={m.id} className="upload-row" style={{ cursor: "default" }}>
-                      <div className="upload-icon"><IconUser size={16} /></div>
+                    <div
+                      key={m.id}
+                      className="upload-row"
+                      style={{ cursor: "default" }}
+                    >
+                      <div className="upload-icon">
+                        <IconUser size={16} />
+                      </div>
                       <div style={{ minWidth: 0 }}>
-                        <div className="upload-title">{m.fullName} {m.isStudent && <span className="muted small">· estudante</span>}</div>
+                        <div className="upload-title">
+                          {m.fullName}{" "}
+                          {m.isStudent && (
+                            <span className="muted small">· estudante</span>
+                          )}
+                        </div>
                         <div className="upload-meta">
-                          {m.relationship}{m.age != null ? ` · ${m.age} anos` : ""}{m.occupation ? ` · ${m.occupation}` : ""}
-                          {m.incomeSituations.length > 0 ? ` · ${m.incomeSituations.join(", ")}` : ""}
+                          {m.relationship}
+                          {m.age != null ? ` · ${m.age} anos` : ""}
+                          {m.occupation ? ` · ${m.occupation}` : ""}
+                          {m.incomeSituations.length > 0
+                            ? ` · ${m.incomeSituations.join(", ")}`
+                            : ""}
                         </div>
                       </div>
-                      <span className="mono small" style={{ color: "var(--ink-700)" }}>{fmtMoney(m.grossIncome)}</span>
+                      <span
+                        className="mono small"
+                        style={{ color: "var(--ink-700)" }}
+                      >
+                        {fmtMoney(m.grossIncome)}
+                      </span>
                     </div>
                   ))
                 )}
@@ -348,112 +737,302 @@ export default function AnalysisPage() {
           </div>
 
           {/* Direita */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 80 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+              position: "sticky",
+              top: 80,
+            }}
+          >
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Analista responsável</h3></div>
+              <div className="card-header">
+                <h3 className="h-card-title">Analista responsável</h3>
+              </div>
               <div className="card-body">
-                <select className="input" value={analystsQuery.data?.find((a) => a.name === d.analyst)?.id ?? ""}
-                  disabled={busy}
-                  onChange={(e) => assignMut.mutate(e.target.value || null)}>
+                <select
+                  className="input"
+                  value={assignedAnalystId ?? ""}
+                  disabled={busy || user.role === "VIEWER"}
+                  onChange={(e) => assignMut.mutate(e.target.value || null)}
+                >
                   <option value="">Não atribuído</option>
-                  {(analystsQuery.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {(analystsQuery.data ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
                 </select>
-                {assignMut.isError && <p className="upload-meta error" style={{ marginTop: 6 }}>{(assignMut.error as Error).message}</p>}
+                {user.role === "VIEWER" && (
+                  <p className="muted small" style={{ marginTop: 6 }}>
+                    Visualizadores não podem alterar o responsável.
+                  </p>
+                )}
+                {canStartAnalysis && (
+                  <button
+                    className="btn btn-primary btn-block"
+                    style={{ marginTop: 10 }}
+                    disabled={busy}
+                    onClick={() => startMut.mutate()}
+                  >
+                    {startMut.isPending
+                      ? "Confirmando…"
+                      : "Confirmar e iniciar análise"}
+                  </button>
+                )}
+                {assignMut.isError && (
+                  <p className="upload-meta error" style={{ marginTop: 6 }}>
+                    {(assignMut.error as Error).message}
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Resumo socioeconômico</h3></div>
+              <div className="card-header">
+                <h3 className="h-card-title">Resumo socioeconômico</h3>
+              </div>
               <div className="card-body">
-                {([
-                  ["Grupo familiar", `${d.summary.membersCount} integrante(s)`],
-                  ["Renda bruta declarada", fmtMoney(d.summary.grossIncome)],
-                  ["Outras rendas", fmtMoney(d.summary.otherIncome)],
-                ] as [string, string][]).map(([l, v], i) => (
-                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: i ? "1px solid var(--ink-150)" : "none", fontSize: 13 }}>
+                {(
+                  [
+                    [
+                      "Grupo familiar",
+                      `${d.summary.membersCount} integrante(s)`,
+                    ],
+                    ["Renda bruta declarada", fmtMoney(d.summary.grossIncome)],
+                    ["Outras rendas", fmtMoney(d.summary.otherIncome)],
+                  ] as [string, string][]
+                ).map(([l, v], i) => (
+                  <div
+                    key={l}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "9px 0",
+                      borderTop: i ? "1px solid var(--ink-150)" : "none",
+                      fontSize: 13,
+                    }}
+                  >
                     <span className="muted">{l}</span>
-                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
+                    <span
+                      className="mono"
+                      style={{ color: "var(--ink-900)", fontWeight: 500 }}
+                    >
+                      {v}
+                    </span>
                   </div>
                 ))}
                 {/* Renda bruta total = declarada + outras. Exibe o valor ajustado
                     pela equipe (uso interno), se houver, com o histórico no tooltip. */}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13, alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "9px 0",
+                    borderTop: "1px solid var(--ink-150)",
+                    fontSize: 13,
+                    alignItems: "center",
+                  }}
+                >
                   <span className="muted">Renda bruta total</span>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
                     {incomeAdjusted && (
-                      <span title={incomeHistoryTitle} aria-label="Histórico de ajustes da renda bruta total" style={{ display: "inline-flex", cursor: "help", color: "var(--blue-700)" }}>
+                      <span
+                        title={incomeHistoryTitle}
+                        aria-label="Histórico de ajustes da renda bruta total"
+                        style={{
+                          display: "inline-flex",
+                          cursor: "help",
+                          color: "var(--blue-700)",
+                        }}
+                      >
                         <IconHistory size={14} />
                       </span>
                     )}
-                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: incomeAdjusted ? 700 : 500 }}>{fmtMoney(rendaBrutaTotal)}</span>
+                    <span
+                      className="mono"
+                      style={{
+                        color: "var(--ink-900)",
+                        fontWeight: incomeAdjusted ? 700 : 500,
+                      }}
+                    >
+                      {fmtMoney(rendaBrutaTotal)}
+                    </span>
                   </span>
                 </div>
-                {([
-                  ["Despesas totais", fmtMoney(d.summary.totalExpenses)],
-                  ["Renda per capita", fmtMoney(d.summary.perCapita)],
-                ] as [string, string][]).map(([l, v]) => (
-                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13 }}>
+                {(
+                  [
+                    ["Despesas totais", fmtMoney(d.summary.totalExpenses)],
+                    ["Renda per capita", fmtMoney(d.summary.perCapita)],
+                  ] as [string, string][]
+                ).map(([l, v]) => (
+                  <div
+                    key={l}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "9px 0",
+                      borderTop: "1px solid var(--ink-150)",
+                      fontSize: 13,
+                    }}
+                  >
                     <span className="muted">{l}</span>
-                    <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{v}</span>
+                    <span
+                      className="mono"
+                      style={{ color: "var(--ink-900)", fontWeight: 500 }}
+                    >
+                      {v}
+                    </span>
                   </div>
                 ))}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--ink-150)", fontSize: 13, alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "9px 0",
+                    borderTop: "1px solid var(--ink-150)",
+                    fontSize: 13,
+                    alignItems: "center",
+                  }}
+                >
                   <span className="muted">Perfil PROUNI</span>
-                  {profile ? <Badge tone={profile.tone}>{profile.label}</Badge> : <span className="muted small">A calcular</span>}
+                  {profile ? (
+                    <Badge tone={profile.tone}>{profile.label}</Badge>
+                  ) : (
+                    <span className="muted small">A calcular</span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Ajustar Renda bruta total · uso interno</h3></div>
+              <div className="card-header">
+                <h3 className="h-card-title">
+                  Ajustar Renda bruta total · uso interno
+                </h3>
+              </div>
               <div className="card-body">
                 <Banner tone="info" title="Visível apenas para a equipe">
-                  Ajuste a <strong>Renda bruta total</strong> após a análise documental (correções, exclusão de rendimentos não computáveis). Fica registrado no histórico e nunca é exibido ao candidato.
+                  Ajuste a <strong>Renda bruta total</strong> após a análise
+                  documental (correções, exclusão de rendimentos não
+                  computáveis). Fica registrado no histórico e nunca é exibido
+                  ao candidato.
                 </Banner>
                 <div className="field" style={{ marginTop: 10 }}>
-                  <label className="field-label">Renda bruta total ajustada (R$)</label>
-                  <input className="input" inputMode="decimal" placeholder="ex.: 3500.00" value={grossIncome} onChange={(e) => setGrossIncome(e.target.value)} />
+                  <label className="field-label">
+                    Renda bruta total ajustada (R$)
+                  </label>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    placeholder="ex.: 3500.00"
+                  value={grossIncome}
+                  disabled={!canPerformAnalystActions}
+                    onChange={(e) => setGrossIncome(e.target.value)}
+                  />
                 </div>
                 {d.summary.membersCount > 0 && (
                   <div className="muted small" style={{ marginTop: 6 }}>
-                    Valor automático (declarada + outras): <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{fmtMoney(d.summary.totalIncome)}</span>. O ajuste altera apenas a linha “Renda bruta total” do resumo — a renda per capita e o perfil PROUNI seguem pelo valor declarado.
+                    Valor automático (declarada + outras):{" "}
+                    <span
+                      className="mono"
+                      style={{ color: "var(--ink-900)", fontWeight: 600 }}
+                    >
+                      {fmtMoney(d.summary.totalIncome)}
+                    </span>
+                    . O ajuste altera apenas a linha “Renda bruta total” do
+                    resumo — a renda per capita e o perfil PROUNI seguem pelo
+                    valor declarado.
                   </div>
                 )}
                 <div className="field" style={{ marginTop: 10 }}>
                   <label className="field-label">Justificativa do ajuste</label>
-                  <textarea className="textarea" rows={3} value={incomeNote} onChange={(e) => setIncomeNote(e.target.value)} placeholder="Ex.: excluído rendimento eventual não computável; correção de holerite…" />
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                  value={incomeNote}
+                  disabled={!canPerformAnalystActions}
+                    onChange={(e) => setIncomeNote(e.target.value)}
+                    placeholder="Ex.: excluído rendimento eventual não computável; correção de holerite…"
+                  />
                 </div>
-                {incomeMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(incomeMut.error as Error).message}</p>}
-                {incomeMut.isSuccess && <p className="upload-meta" style={{ marginTop: 8, color: "var(--green-700)" }}>Renda bruta total atualizada.</p>}
-                <button className="btn btn-secondary btn-block" style={{ marginTop: 10 }} disabled={incomeMut.isPending} onClick={() => incomeMut.mutate()}>
+                {incomeMut.isError && (
+                  <p className="upload-meta error" style={{ marginTop: 8 }}>
+                    {(incomeMut.error as Error).message}
+                  </p>
+                )}
+                {incomeMut.isSuccess && (
+                  <p
+                    className="upload-meta"
+                    style={{ marginTop: 8, color: "var(--green-700)" }}
+                  >
+                    Renda bruta total atualizada.
+                  </p>
+                )}
+                <button
+                  className="btn btn-secondary btn-block"
+                  style={{ marginTop: 10 }}
+                  disabled={!canPerformAnalystActions || incomeMut.isPending}
+                  onClick={() => incomeMut.mutate()}
+                >
                   {incomeMut.isPending ? "Salvando…" : "Salvar ajuste"}
                 </button>
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Parecer e decisão</h3></div>
+              <div className="card-header">
+                <h3 className="h-card-title">Parecer e decisão</h3>
+              </div>
               <div className="card-body">
-                {d.status === "enviada" && (
-                  <button className="btn btn-ghost btn-block" style={{ marginBottom: 12 }}
-                    disabled={busy || startMut.isPending}
-                    onClick={() => startMut.mutate()}>
-                    {startMut.isPending ? "Iniciando…" : "Iniciar análise"}
-                  </button>
-                )}
-                <textarea className="textarea" rows={5} value={parecer} onChange={(e) => setParecer(e.target.value)}
-                  placeholder="Parecer do analista…" />
-                <div className="muted small" style={{ marginTop: 6 }}>Visível apenas para a equipe. Auditável no histórico.</div>
+                <textarea
+                  className="textarea"
+                  rows={5}
+                  value={parecer}
+                  disabled={!canPerformAnalystActions}
+                  onChange={(e) => setParecer(e.target.value)}
+                  placeholder="Parecer do analista…"
+                />
+                <div className="muted small" style={{ marginTop: 6 }}>
+                  Visível apenas para a equipe. Auditável no histórico.
+                </div>
 
                 <div style={{ marginTop: 14 }}>
-                  <div className="field-label" style={{ marginBottom: 6 }}>Decisão</div>
-                  <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="field-label" style={{ marginBottom: 6 }}>
+                    Decisão
+                  </div>
+                  <div
+                    className="rgrid"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 8,
+                    }}
+                  >
                     {DECISIONS.map((dec) => {
                       const c = toneVar(dec.tone);
                       const on = decision === dec.id;
                       return (
-                        <button key={dec.id} className="btn btn-ghost" onClick={() => setDecision(dec.id)}
-                          style={{ justifyContent: "center", borderColor: on ? `var(--${c}-600)` : undefined, background: on ? `var(--${c}-100)` : undefined, color: on ? `var(--${c}-700)` : undefined, fontWeight: on ? 600 : 500 }}>
+                        <button
+                          key={dec.id}
+                          className="btn btn-ghost"
+                          disabled={!canPerformAnalystActions}
+                          onClick={() => setDecision(dec.id)}
+                          style={{
+                            justifyContent: "center",
+                            borderColor: on ? `var(--${c}-600)` : undefined,
+                            background: on ? `var(--${c}-100)` : undefined,
+                            color: on ? `var(--${c}-700)` : undefined,
+                            fontWeight: on ? 600 : 500,
+                          }}
+                        >
                           {dec.label}
                         </button>
                       );
@@ -463,46 +1042,108 @@ export default function AnalysisPage() {
 
                 {decision === "CLASSIFICAR" && (
                   <div style={{ marginTop: 12 }}>
-                    <div className="field-label" style={{ marginBottom: 6 }}>Tipo de bolsa</div>
+                    <div className="field-label" style={{ marginBottom: 6 }}>
+                      Tipo de bolsa
+                    </div>
                     {/* Processo 2026/2: somente bolsa integral (faixa parcial desabilitada). */}
-                    <select className="input" value={kind} onChange={(e) => setKind(e.target.value as "INTEGRAL" | "PARCIAL" | "")}>
+                    <select
+                      className="input"
+                      value={kind}
+                      disabled={!canPerformAnalystActions}
+                      onChange={(e) =>
+                        setKind(e.target.value as "INTEGRAL" | "PARCIAL" | "")
+                      }
+                    >
                       <option value="">Selecione…</option>
                       <option value="INTEGRAL">Integral</option>
                     </select>
-                    {kind === "INTEGRAL" && d.summary.profile !== "INTEGRAL" && (
-                      <div className="upload-meta error" style={{ marginTop: 8 }}>
-                        ⚠ A renda per capita apurada ({fmtMoney(d.summary.perCapita)}) está acima do teto para bolsa integral (1,5 salário mínimo). Confirme antes de classificar.
-                      </div>
-                    )}
+                    {kind === "INTEGRAL" &&
+                      d.summary.profile !== "INTEGRAL" && (
+                        <div
+                          className="upload-meta error"
+                          style={{ marginTop: 8 }}
+                        >
+                          ⚠ A renda per capita apurada (
+                          {fmtMoney(d.summary.perCapita)}) está acima do teto
+                          para bolsa integral (1,5 salário mínimo). Confirme
+                          antes de classificar.
+                        </div>
+                      )}
                   </div>
                 )}
 
                 {(decision === "PENDENCIA" || decision === "INDEFERIR") && (
                   <div style={{ marginTop: 12 }}>
-                    <div className="field-label" style={{ marginBottom: 6 }}>Motivo {decision === "INDEFERIR" ? "do indeferimento" : "da pendência"} <span style={{ color: "var(--red-600)" }}>*</span></div>
-                    <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+                    <div className="field-label" style={{ marginBottom: 6 }}>
+                      Motivo{" "}
+                      {decision === "INDEFERIR"
+                        ? "do indeferimento"
+                        : "da pendência"}{" "}
+                      <span style={{ color: "var(--red-600)" }}>*</span>
+                    </div>
+                    <select
+                      className="input"
+                      value={reason}
+                      disabled={!canPerformAnalystActions}
+                      onChange={(e) => setReason(e.target.value)}
+                    >
                       <option value="">Selecione o motivo…</option>
                       {DECISION_REASONS[decision].map((r) => (
-                        <option key={r.value} value={r.value}>{r.label}</option>
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
                       ))}
                     </select>
                   </div>
                 )}
 
-                {decideMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(decideMut.error as Error).message}</p>}
-                {decideMut.isSuccess && <p className="upload-meta" style={{ marginTop: 10, color: "var(--green-700)" }}>Decisão registrada.</p>}
+                {decideMut.isError && (
+                  <p className="upload-meta error" style={{ marginTop: 10 }}>
+                    {(decideMut.error as Error).message}
+                  </p>
+                )}
+                {decideMut.isSuccess && (
+                  <p
+                    className="upload-meta"
+                    style={{ marginTop: 10, color: "var(--green-700)" }}
+                  >
+                    Decisão registrada.
+                  </p>
+                )}
 
-                <button className="btn btn-primary btn-block" style={{ marginTop: 12 }}
-                  disabled={busy || !decision || !parecer.trim() || ((decision === "PENDENCIA" || decision === "INDEFERIR") && !reason)}
-                  onClick={() => decision && decideMut.mutate({ parecer: parecer.trim(), decision, scholarshipKind: kind || null, reasonCode: reason || null, isFinal: true })}>
-                  <IconCheck size={14} /> {decideMut.isPending ? "Registrando…" : "Registrar decisão"}
+                <button
+                  className="btn btn-primary btn-block"
+                  style={{ marginTop: 12 }}
+                  disabled={
+                    busy ||
+                    !canPerformAnalystActions ||
+                    !decision ||
+                    !parecer.trim() ||
+                    ((decision === "PENDENCIA" || decision === "INDEFERIR") &&
+                      !reason)
+                  }
+                  onClick={() =>
+                    decision &&
+                    decideMut.mutate({
+                      parecer: parecer.trim(),
+                      decision,
+                      scholarshipKind: kind || null,
+                      reasonCode: reason || null,
+                      isFinal: true,
+                    })
+                  }
+                >
+                  <IconCheck size={14} />{" "}
+                  {decideMut.isPending ? "Registrando…" : "Registrar decisão"}
                 </button>
               </div>
             </div>
 
             {(d.status === "classificado" || d.rmRegistration) && (
               <div className="card">
-                <div className="card-header"><h3 className="h-card-title">Integração RM</h3></div>
+                <div className="card-header">
+                  <h3 className="h-card-title">Integração RM</h3>
+                </div>
                 <div className="card-body">
                   {d.rmRegistration ? (
                     <>
@@ -510,16 +1151,41 @@ export default function AnalysisPage() {
                         Inscrição registrada no TOTVS RM.
                       </Banner>
                       <div className="muted small" style={{ marginTop: 8 }}>
-                        Registro: <span className="mono" style={{ color: "var(--ink-900)", fontWeight: 600 }}>{d.rmRegistration}</span>
+                        Registro:{" "}
+                        <span
+                          className="mono"
+                          style={{ color: "var(--ink-900)", fontWeight: 600 }}
+                        >
+                          {d.rmRegistration}
+                        </span>
                         {d.rmSyncedAt && <> · {fmtWhen(d.rmSyncedAt)}</>}
                       </div>
                       {user?.role === "ADMIN" && (
                         <>
-                          {revertRmMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(revertRmMut.error as Error).message}</p>}
-                          <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, color: "var(--red-700)" }}
+                          {revertRmMut.isError && (
+                            <p
+                              className="upload-meta error"
+                              style={{ marginTop: 10 }}
+                            >
+                              {(revertRmMut.error as Error).message}
+                            </p>
+                          )}
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ marginTop: 10, color: "var(--red-700)" }}
                             disabled={busy || revertRmMut.isPending}
-                            onClick={() => { if (confirm("Reverter a exportação? Remove o vínculo com o RM e volta o status para Classificado. Use apenas para corrigir uma exportação indevida (ex.: feita sem o RM configurado).")) revertRmMut.mutate(); }}>
-                            {revertRmMut.isPending ? "Revertendo…" : "Reverter exportação"}
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "Reverter a exportação? Remove o vínculo com o RM e volta o status para Classificado. Use apenas para corrigir uma exportação indevida (ex.: feita sem o RM configurado).",
+                                )
+                              )
+                                revertRmMut.mutate();
+                            }}
+                          >
+                            {revertRmMut.isPending
+                              ? "Revertendo…"
+                              : "Reverter exportação"}
                           </button>
                         </>
                       )}
@@ -527,12 +1193,27 @@ export default function AnalysisPage() {
                   ) : (
                     <>
                       <p className="muted small" style={{ marginBottom: 10 }}>
-                        Envia esta inscrição ao TOTVS RM (cria o candidato no processo seletivo) e altera o status para <strong>Concedida</strong>.
+                        Envia esta inscrição ao TOTVS RM (cria o candidato no
+                        processo seletivo) e altera o status para{" "}
+                        <strong>Concedida</strong>.
                       </p>
-                      {exportRmMut.isError && <p className="upload-meta error" style={{ marginBottom: 8 }}>{(exportRmMut.error as Error).message}</p>}
-                      <button className="btn btn-primary btn-block" disabled={busy || exportRmMut.isPending}
-                        onClick={() => exportRmMut.mutate()}>
-                        <IconUpload size={14} /> {exportRmMut.isPending ? "Exportando…" : "Exportar para o RM"}
+                      {exportRmMut.isError && (
+                        <p
+                          className="upload-meta error"
+                          style={{ marginBottom: 8 }}
+                        >
+                          {(exportRmMut.error as Error).message}
+                        </p>
+                      )}
+                      <button
+                        className="btn btn-primary btn-block"
+                        disabled={busy || exportRmMut.isPending}
+                        onClick={() => exportRmMut.mutate()}
+                      >
+                        <IconUpload size={14} />{" "}
+                        {exportRmMut.isPending
+                          ? "Exportando…"
+                          : "Exportar para o RM"}
                       </button>
                     </>
                   )}
@@ -541,15 +1222,21 @@ export default function AnalysisPage() {
             )}
 
             <div className="card">
-              <div className="card-header"><h3 className="h-card-title">Histórico</h3></div>
+              <div className="card-header">
+                <h3 className="h-card-title">Histórico</h3>
+              </div>
               <div className="card-body">
                 {d.events.length === 0 ? (
                   <div className="muted small">Sem eventos registrados.</div>
                 ) : (
-                  <Timeline items={d.events.map((e, i) => ({
-                    state: i === d.events.length - 1 ? "active" : "done",
-                    title: e.title, meta: fmtWhen(e.createdAt), body: e.body ?? undefined,
-                  }))} />
+                  <Timeline
+                    items={d.events.map((e, i) => ({
+                      state: i === d.events.length - 1 ? "active" : "done",
+                      title: e.title,
+                      meta: fmtWhen(e.createdAt),
+                      body: e.body ?? undefined,
+                    }))}
+                  />
                 )}
               </div>
             </div>
