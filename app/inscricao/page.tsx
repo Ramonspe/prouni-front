@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/auth-context";
 import { maskCpf, maskMoney, maskPhone } from "@/lib/format";
 import {
   INCOME_SITUATIONS,
+  familyCompletionIssues,
   registerSchema,
   type ApplicationDto,
   type FamilyMemberDto,
@@ -398,12 +399,16 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
   const [adding, setAdding] = useState(false);
   const [cpfErrors, setCpfErrors] = useState<Record<string, string>>({});
 
-  const update = (id: string, patch: Partial<FamilyMemberInput>) => {
-    // Atualização otimista do cache: campos controlados (ex.: estado civil) refletem
-    // a seleção na hora, sem "piscar" esperando o refetch.
+  const updateCache = (id: string, patch: Partial<FamilyMemberInput>) => {
     qc.setQueryData(["family", appId], (old?: FamilyMemberDto[]) =>
       (old ?? []).map((x) => (x.id === id ? { ...x, ...(patch as Partial<FamilyMemberDto>) } : x)),
     );
+  };
+
+  const update = (id: string, patch: Partial<FamilyMemberInput>) => {
+    // Atualização otimista do cache: campos controlados (ex.: estado civil) refletem
+    // a seleção na hora, sem "piscar" esperando o refetch.
+    updateCache(id, patch);
     return familyApi.update(id, patch).then(refetch).catch(() => {});
   };
 
@@ -420,8 +425,13 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
   };
 
   const adults = list.filter((m) => (m.age ?? 0) >= 18).length;
-  const adultsWithIncome = list.filter((m) => (m.age ?? 0) >= 18).every((m) => (m.incomeSituations ?? []).length > 0);
-  useEffect(() => { onValidChange(list.length > 0 && adultsWithIncome); }, [list.length, adultsWithIncome]); // eslint-disable-line react-hooks/exhaustive-deps
+  const completionIssues = familyCompletionIssues(list);
+  const valid = !members.isLoading && completionIssues.length === 0;
+  const hasIssue = (memberId: string, field: string) =>
+    completionIssues.some((issue) => issue.memberId === memberId && issue.field === field);
+  const invalidStyle = (memberId: string, field: string) =>
+    hasIssue(memberId, field) ? { borderColor: "var(--red-500)" } : undefined;
+  useEffect(() => { onValidChange(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
   const totalIncome = list.reduce((s, m) => s + (m.grossIncome ? Number(m.grossIncome) : 0), 0);
   const perCapita = list.length ? totalIncome / list.length : 0;
   const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -434,6 +444,13 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
         cada membro será necessário enviar documentos de identificação, comprovante de residência e — para
         os maiores de 18 anos — comprovantes de renda. As alterações são salvas automaticamente.
       </p>
+      {!members.isLoading && completionIssues.length > 0 && (
+        <div className="banner banner-danger" style={{ marginTop: 14, padding: "10px 12px" }}>
+          <div className="banner-body" style={{ color: "var(--red-700)" }}>
+            Preencha os campos obrigatórios destacados para continuar ({completionIssues.length} pendência(s)).
+          </div>
+        </div>
+      )}
 
       <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 18 }}>
         <div className="stat">
@@ -469,79 +486,99 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       className="membro-name"
                       maxLength={120}
                       defaultValue={m.fullName}
-                      placeholder="Nome completo"
-                      onBlur={(e) => e.target.value !== m.fullName && update(m.id, { fullName: e.target.value })}
+                      placeholder="Nome completo *"
+                      aria-invalid={hasIssue(m.id, "fullName")}
+                      style={invalidStyle(m.id, "fullName")}
+                      onChange={(e) => updateCache(m.id, { fullName: e.target.value })}
+                      onBlur={(e) => update(m.id, { fullName: e.target.value })}
                     />
                     <input
                       className="input"
-                      style={{ maxWidth: 150, height: 30, fontSize: 12.5 }}
                       maxLength={40}
                       defaultValue={m.relationship}
-                      placeholder="Parentesco"
-                      onBlur={(e) => e.target.value !== m.relationship && update(m.id, { relationship: e.target.value })}
+                      placeholder="Parentesco *"
+                      aria-invalid={hasIssue(m.id, "relationship")}
+                      style={{ maxWidth: 150, height: 30, fontSize: 12.5, ...invalidStyle(m.id, "relationship") }}
+                      onChange={(e) => updateCache(m.id, { relationship: e.target.value })}
+                      onBlur={(e) => update(m.id, { relationship: e.target.value })}
                     />
                   </div>
                   <div className="membro-row2" style={{ gap: 12, flexWrap: "wrap", marginTop: 6 }}>
                     <label className="muted small">
-                      Idade{" "}
+                      Idade<span className="req">*</span>{" "}
                       <input
                         className="input mono"
-                        style={{ width: 60, height: 28 }}
                         inputMode="numeric"
                         maxLength={3}
                         defaultValue={m.age ?? ""}
-                        onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 3); }}
+                        aria-invalid={hasIssue(m.id, "age")}
+                        style={{ width: 60, height: 28, ...invalidStyle(m.id, "age") }}
+                        onChange={(e) => {
+                          e.target.value = e.target.value.replace(/\D/g, "").slice(0, 3);
+                          updateCache(m.id, { age: e.target.value ? Number(e.target.value) : undefined });
+                        }}
                         onBlur={(e) => update(m.id, { age: e.target.value ? Number(e.target.value) : undefined })}
                       />
                     </label>
                     <label className="muted small" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                      CPF{" "}
+                      CPF<span className="req">*</span>{" "}
                       <input
                         className="input mono"
-                        style={{ width: 150, height: 28, ...(cpfErrors[m.id] ? { borderColor: "var(--red-500)" } : {}) }}
+                        style={{ width: 150, height: 28, ...((cpfErrors[m.id] || hasIssue(m.id, "cpf")) ? { borderColor: "var(--red-500)" } : {}) }}
+                        aria-invalid={!!cpfErrors[m.id] || hasIssue(m.id, "cpf")}
                         inputMode="numeric"
                         maxLength={14}
                         defaultValue={m.cpf ?? ""}
-                        onChange={(e) => { e.target.value = maskCpf(e.target.value); }}
+                        onChange={(e) => {
+                          e.target.value = maskCpf(e.target.value);
+                          updateCache(m.id, { cpf: e.target.value });
+                        }}
                         onBlur={(e) => {
                           const val = e.target.value;
                           if (val && !isValidCpf(val)) {
                             setCpfErrors((prev) => ({ ...prev, [m.id]: "CPF inválido" }));
                           } else {
                             setCpfErrors((prev) => { const n = { ...prev }; delete n[m.id]; return n; });
-                            if (val !== (m.cpf ?? "")) update(m.id, { cpf: val });
+                            update(m.id, { cpf: val });
                           }
                         }}
                       />
                       {cpfErrors[m.id] && <span style={{ fontSize: 11, color: "var(--red-700)", fontWeight: 500 }}>{cpfErrors[m.id]}</span>}
                     </label>
                     <label className="muted small">
-                      Profissão{" "}
+                      Profissão<span className="req">*</span>{" "}
                       <input
                         className="input"
-                        style={{ width: 170, height: 28 }}
+                        style={{ width: 170, height: 28, ...invalidStyle(m.id, "occupation") }}
+                        aria-invalid={hasIssue(m.id, "occupation")}
                         maxLength={80}
                         defaultValue={m.occupation ?? ""}
+                        onChange={(e) => updateCache(m.id, { occupation: e.target.value })}
                         onBlur={(e) => update(m.id, { occupation: e.target.value })}
                       />
                     </label>
                     <label className="muted small">
-                      Renda bruta (R$){" "}
+                      Renda bruta (R$)<span className="req">*</span>{" "}
                       <input
                         className="input mono"
-                        style={{ width: 120, height: 28 }}
+                        style={{ width: 120, height: 28, ...invalidStyle(m.id, "grossIncome") }}
+                        aria-invalid={hasIssue(m.id, "grossIncome")}
                         inputMode="decimal"
                         maxLength={14}
                         defaultValue={m.grossIncome ?? ""}
-                        onChange={(e) => { e.target.value = maskMoney(e.target.value); }}
+                        onChange={(e) => {
+                          e.target.value = maskMoney(e.target.value);
+                          updateCache(m.id, { grossIncome: toMoney(e.target.value) });
+                        }}
                         onBlur={(e) => update(m.id, { grossIncome: toMoney(e.target.value) })}
                       />
                     </label>
                     <label className="muted small">
-                      Estado civil{" "}
+                      Estado civil<span className="req">*</span>{" "}
                       <select
                         className="input"
-                        style={{ width: 150, height: 28, fontSize: 12.5, padding: "0 8px", lineHeight: "26px" }}
+                        style={{ width: 150, height: 28, fontSize: 12.5, padding: "0 8px", lineHeight: "26px", ...invalidStyle(m.id, "maritalStatus") }}
+                        aria-invalid={hasIssue(m.id, "maritalStatus")}
                         value={m.maritalStatus ?? ""}
                         onChange={(e) => update(m.id, { maritalStatus: e.target.value })}
                       >
@@ -562,10 +599,11 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                       Responsável financeiro
                     </label>
                     <label className="muted small">
-                      Grau de escolaridade{" "}
+                      Grau de escolaridade<span className="req">*</span>{" "}
                       <select
                         className="input"
-                        style={{ width: 210, height: 28, fontSize: 12.5, padding: "0 8px" }}
+                        style={{ width: 210, height: 28, fontSize: 12.5, padding: "0 8px", ...invalidStyle(m.id, "educationLevel") }}
+                        aria-invalid={hasIssue(m.id, "educationLevel")}
                         value={m.educationLevel ?? ""}
                         onChange={(e) => update(m.id, { educationLevel: e.target.value })}
                       >
@@ -593,24 +631,30 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                     {m.isStudent && (
                       <>
                         <label className="muted small">
-                          Escola / Universidade{" "}
+                          Escola / Universidade<span className="req">*</span>{" "}
                           <input
                             className="input"
-                            style={{ width: 200, height: 28 }}
+                            style={{ width: 200, height: 28, ...invalidStyle(m.id, "schoolName") }}
+                            aria-invalid={hasIssue(m.id, "schoolName")}
                             maxLength={120}
                             defaultValue={m.schoolName ?? ""}
+                            onChange={(e) => updateCache(m.id, { schoolName: e.target.value })}
                             onBlur={(e) => update(m.id, { schoolName: e.target.value })}
                           />
                         </label>
                         <label className="muted small">
-                          Valor da mensalidade (R$){" "}
+                          Valor da mensalidade (R$)<span className="req">*</span>{" "}
                           <input
                             className="input mono"
-                            style={{ width: 120, height: 28 }}
+                            style={{ width: 120, height: 28, ...invalidStyle(m.id, "schoolFee") }}
+                            aria-invalid={hasIssue(m.id, "schoolFee")}
                             inputMode="decimal"
                             maxLength={14}
                             defaultValue={m.schoolFee ?? ""}
-                            onChange={(e) => { e.target.value = maskMoney(e.target.value); }}
+                            onChange={(e) => {
+                              e.target.value = maskMoney(e.target.value);
+                              updateCache(m.id, { schoolFee: toMoney(e.target.value) });
+                            }}
                             onBlur={(e) => update(m.id, { schoolFee: toMoney(e.target.value) })}
                           />
                         </label>
@@ -620,8 +664,13 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
                   {(m.age ?? 0) >= 18 && (
                     <div style={{ marginTop: 8 }}>
                       <div className="muted small" style={{ marginBottom: 6 }}>
-                        Situação de renda <strong>(pode marcar mais de uma)</strong>:
+                        Situação de renda<span className="req">*</span> <strong>(pode marcar mais de uma)</strong>:
                       </div>
+                      {hasIssue(m.id, "incomeSituations") && (
+                        <div className="field-help" style={{ color: "var(--red-700)", marginTop: 5 }}>
+                          Selecione ao menos uma situação de renda.
+                        </div>
+                      )}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {INCOME_SITUATIONS.map((s) => {
                           const on = (m.incomeSituations ?? []).includes(s.value);
@@ -698,7 +747,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
   );
 }
 
-function StepDocs({ appId }: { appId: string | null }) {
+function StepDocs({ appId, onValidChange }: { appId: string | null; onValidChange: (valid: boolean) => void }) {
   const qc = useQueryClient();
   const docs = useQuery({
     queryKey: ["required-docs", appId],
@@ -714,6 +763,13 @@ function StepDocs({ appId }: { appId: string | null }) {
   const [upErr, setUpErr] = useState("");
   const data: RequiredDocumentsDto | undefined = docs.data;
   const upMap = new Map((uploaded.data ?? []).map((u) => [`${u.documentTypeId}:${u.familyMemberId ?? "app"}`, u]));
+  const requiredItems = data?.categories.flatMap((category) => category.items.filter((item) => item.required)) ?? [];
+  const sentRequiredCount = requiredItems.filter((item) => {
+    const document = upMap.get(`${item.typeId}:${item.member?.id ?? "app"}`);
+    return document?.status === "ENVIADO" || document?.status === "APROVADO";
+  }).length;
+  const valid = !docs.isLoading && !uploaded.isLoading && !!data && data.notes.length === 0 && sentRequiredCount === requiredItems.length;
+  useEffect(() => { onValidChange(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPick = async (key: string, typeId: string, memberId: string | null, file?: File) => {
     if (!file || !appId) return;
@@ -750,6 +806,13 @@ function StepDocs({ appId }: { appId: string | null }) {
           <div className="banner-body" style={{ color: "var(--red-700)" }}>{upErr}</div>
         </div>
       )}
+      {!docs.isLoading && !uploaded.isLoading && data && !valid && (
+        <div className="banner banner-danger" style={{ marginTop: 12, padding: "10px 12px" }}>
+          <div className="banner-body" style={{ color: "var(--red-700)" }}>
+            Envie todos os documentos obrigatórios para continuar ({sentRequiredCount}/{requiredItems.length}).
+          </div>
+        </div>
+      )}
 
       {docs.isLoading ? (
         <p className="muted" style={{ marginTop: 16 }}>Montando a sua lista de documentos…</p>
@@ -775,8 +838,8 @@ function StepDocs({ appId }: { appId: string | null }) {
               <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink-900)" }}>{data.totals.total}</div>
             </div>
             <div className="docs-summary-item">
-              <div className="muted small">Enviados</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)" }}>{uploaded.data?.length ?? 0}</div>
+              <div className="muted small">Obrigatórios enviados</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)" }}>{sentRequiredCount}/{requiredItems.length}</div>
             </div>
             <div className="docs-summary-item" style={{ flex: 1 }}>
               <div className="muted small" style={{ marginBottom: 4 }}>
@@ -797,7 +860,7 @@ function StepDocs({ appId }: { appId: string | null }) {
                 <div className="docs-cat-body">
                   {cat.items.map((it) => {
                     const up = upMap.get(`${it.typeId}:${it.member?.id ?? "app"}`);
-                    const sent = !!up && up.status !== "A_ENVIAR";
+                    const sent = up?.status === "ENVIADO" || up?.status === "APROVADO";
                     const rowClass =
                       up?.status === "APROVADO" ? "has-file" : up?.status === "REPROVADO" ? "has-rejected" : sent ? "has-pending" : "";
                     return (
@@ -869,11 +932,11 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
           <IconCheck size={36} stroke={2.6} />
         </div>
         <h1 style={{ textAlign: "center", margin: 0, fontSize: 32, color: "var(--navy-900)", letterSpacing: "-0.01em", fontWeight: 700 }}>
-          Inscrição iniciada com sucesso
+          Inscrição enviada com sucesso
         </h1>
         <p style={{ textAlign: "center", color: "var(--ink-600)", fontSize: 16, marginTop: 10 }}>
-          Seus dados foram registrados. Continue pela sua área do candidato para preencher a ficha e enviar
-          os documentos.
+          Sua ficha e seus documentos foram enviados para análise. Acompanhe as próximas etapas pela sua
+          área do candidato.
         </p>
 
         <div className="card" style={{ marginTop: 28 }}>
@@ -903,8 +966,8 @@ function SignupSuccess({ app }: { app: ApplicationDto | null }) {
           <Timeline
             items={[
               { state: "done", title: "Acesso criado e inscrição iniciada", meta: "Agora" },
-              { state: "active", title: "Preencha a ficha socioeconômica e envie os documentos", meta: "Próximo passo", body: "Disponível na sua área do candidato." },
-              { title: "Triagem documental pela Secretaria de Bolsas", meta: "Após o envio" },
+              { state: "done", title: "Ficha socioeconômica e documentos enviados", meta: "Concluído" },
+              { state: "active", title: "Triagem documental pela Secretaria de Bolsas", meta: "Próximo passo" },
               { title: "Análise socioeconômica e parecer", meta: "Em seguida" },
               { title: "Resultado final", meta: "Previsão do edital" },
             ]}
@@ -935,7 +998,17 @@ export default function InscricaoPage() {
   const [finalApp, setFinalApp] = useState<ApplicationDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const [valid, setValid] = useState<Record<string, boolean>>({});
+  const [valid, setValid] = useState<Record<string, boolean>>({
+    estudante: false,
+    familia: false,
+    moradia: false,
+    docs: false,
+    revisao: false,
+  });
+
+  const updateValidity = (key: string, value: boolean) => {
+    setValid((current) => current[key] === value ? current : { ...current, [key]: value });
+  };
 
   // Recupera o token de verificação de e-mail; sem ele, volta para /verificar.
   useEffect(() => {
@@ -983,9 +1056,13 @@ export default function InscricaoPage() {
       } else if (step === "revisao") {
         setSaving(true);
         const id = await ensureAppId();
-        if (id) await socioApi.submit(id);
-        const me = id ? await applicationsApi.me().catch(() => null) : null;
-        setFinalApp(me);
+        if (!id) {
+          setErr("Não foi possível localizar a inscrição. Entre novamente e tente de novo.");
+          return;
+        }
+        await socioApi.submit(id);
+        const finalized = await applicationsApi.finalize(id);
+        setFinalApp(finalized);
         setDone(true);
         return;
       }
@@ -1044,12 +1121,12 @@ export default function InscricaoPage() {
           onCourse={setCourseId}
         />
       )}
-      {step === "estudante" && <StepEstudante appId={appId} />}
-      {step === "familia" && <StepFamilia appId={appId} onValidChange={(v) => setValid((s) => ({ ...s, familia: v }))} />}
-      {step === "moradia" && <StepMoradia appId={appId} onValidChange={(v) => setValid((s) => ({ ...s, moradia: v }))} />}
+      {step === "estudante" && <StepEstudante appId={appId} onValidChange={(v) => updateValidity("estudante", v)} />}
+      {step === "familia" && <StepFamilia appId={appId} onValidChange={(v) => updateValidity("familia", v)} />}
+      {step === "moradia" && <StepMoradia appId={appId} onValidChange={(v) => updateValidity("moradia", v)} />}
       {step === "renda" && <StepRendaDespesas appId={appId} />}
-      {step === "docs" && <StepDocs appId={appId} />}
-      {step === "revisao" && <StepRevisao appId={appId} onReadyChange={(v) => setValid((s) => ({ ...s, revisao: v }))} />}
+      {step === "docs" && <StepDocs appId={appId} onValidChange={(v) => updateValidity("docs", v)} />}
+      {step === "revisao" && <StepRevisao appId={appId} onReadyChange={(v) => updateValidity("revisao", v)} />}
 
       {step !== "account" && err && (
         <div className="banner banner-danger" style={{ marginTop: 16, padding: "10px 12px" }}>
@@ -1058,7 +1135,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["familia", "moradia", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["estudante", "familia", "moradia", "docs", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
       )}
     </SignupShell>
   );

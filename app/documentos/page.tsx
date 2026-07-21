@@ -1,12 +1,18 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Badge, Banner } from "@/components/ui";
 import { IconCheck, IconChevR, IconDownload, IconFile, IconInfo, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireAuth } from "@/lib/use-require-auth";
-import { applicationsApi, documentsApi } from "@/lib/api";
-import type { BadgeTone, RequiredDocumentDto, UploadedDocumentDto } from "@prouni/shared";
+import { applicationsApi, documentsApi, familyApi, socioApi } from "@/lib/api";
+import {
+  applicationCompletionIssues,
+  type BadgeTone,
+  type RequiredDocumentDto,
+  type UploadedDocumentDto,
+} from "@prouni/shared";
 
 const SCOPE_LABEL: Record<string, string> = {
   APPLICATION: "Documento da inscrição",
@@ -299,6 +305,16 @@ export default function DocumentosPage() {
   const [selected, setSelected] = useState<Selected | null>(null);
 
   const app = useQuery({ queryKey: ["application", "me"], queryFn: applicationsApi.me, enabled: !!user });
+  const socio = useQuery({
+    queryKey: ["socio", app.data?.id],
+    queryFn: () => socioApi.get(app.data!.id),
+    enabled: !!app.data?.id,
+  });
+  const family = useQuery({
+    queryKey: ["family", app.data?.id],
+    queryFn: () => familyApi.list(app.data!.id),
+    enabled: !!app.data?.id,
+  });
   const docs = useQuery({
     queryKey: ["application", app.data?.id, "required-documents"],
     queryFn: () => applicationsApi.requiredDocuments(app.data!.id),
@@ -330,6 +346,13 @@ export default function DocumentosPage() {
     return uploaded?.status === "ENVIADO" || uploaded?.status === "APROVADO";
   }).length;
   const allRequiredSent = !!data && sentRequiredCount === requiredItems.length;
+  const hasCourse = !!app.data?.course;
+  const completionIssues = applicationCompletionIssues({
+    form: socio.data?.form,
+    members: family.data,
+    vehicles: socio.data?.vehicles,
+  });
+  const allFieldsComplete = !socio.isLoading && !family.isLoading && !!socio.data && !!family.data && completionIssues.length === 0;
   const selectedUploaded = selected ? uploadedByKey.get(slotKey(selected.typeId, selected.member?.id ?? null)) : undefined;
 
   const finalizeMut = useMutation({
@@ -354,7 +377,7 @@ export default function DocumentosPage() {
           </div>
         </div>
 
-        {loading || app.isLoading || docs.isLoading ? (
+        {loading || app.isLoading || docs.isLoading || socio.isLoading || family.isLoading ? (
           <div className="card card-pad muted">Montando sua lista de documentos…</div>
         ) : app.isError || docs.isError || !data ? (
           <Banner tone="warn" title="Não foi possível carregar os documentos">
@@ -395,8 +418,12 @@ export default function DocumentosPage() {
                 <div>
                   <strong style={{ fontSize: 14 }}>Finalizar inscrição</strong>
                   <div className="muted small" style={{ marginTop: 2 }}>
-                    {allRequiredSent
-                      ? "Todos os documentos obrigatórios foram enviados. Você já pode finalizar e enviar para análise."
+                    {!hasCourse
+                      ? <>Selecione o curso e o campus no <Link href="/painel">painel</Link> antes de finalizar a inscrição.</>
+                      : !allFieldsComplete
+                      ? <>Complete os campos obrigatórios da <Link href="/ficha">ficha socioeconômica</Link> ({completionIssues.length} pendência(s)) antes de finalizar.</>
+                      : allRequiredSent
+                      ? "Todos os dados e documentos obrigatórios foram preenchidos. Você já pode finalizar e enviar para análise."
                       : `Envie todos os documentos obrigatórios (${sentRequiredCount}/${data.totals.required}) para liberar a finalização.`}
                   </div>
                   {finalizeMut.isError && (
@@ -405,7 +432,7 @@ export default function DocumentosPage() {
                 </div>
                 <button
                   className="btn btn-primary"
-                  disabled={!allRequiredSent || finalizeMut.isPending}
+                  disabled={!hasCourse || !allFieldsComplete || !allRequiredSent || finalizeMut.isPending}
                   onClick={() => {
                     if (confirm("Após finalizar, você não poderá mais enviar ou trocar documentos. Deseja enviar a inscrição para análise?")) {
                       finalizeMut.mutate();
