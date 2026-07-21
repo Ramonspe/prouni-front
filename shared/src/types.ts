@@ -94,21 +94,70 @@ export type IncomeSituation =
   | "ESTAGIARIO_APRENDIZ";
 
 /** Lista para o <select> da ficha — rótulo + dica do documento esperado. */
-export const INCOME_SITUATIONS: { value: IncomeSituation; label: string; hint: string }[] = [
-  { value: "ASSALARIADO", label: "Empregado(a) com carteira (CLT) ou servidor(a) público(a)", hint: "Contracheques dos últimos 3 meses" },
-  { value: "AUTONOMO", label: "Trabalhador(a) autônomo(a)", hint: "Declaração de trabalho autônomo + RPA/extratos" },
-  { value: "LIBERAL", label: "Profissional liberal (profissão regulamentada)", hint: "DECORE dos últimos 3 meses (com CRC do contador)" },
-  { value: "INFORMAL", label: "Trabalhador(a) informal (sem vínculo)", hint: "Declaração de trabalho informal (gov.br)" },
-  { value: "SEM_RENDA", label: "Sem atividade remunerada / do lar", hint: "Declaração de ausência de renda (gov.br)" },
-  { value: "DESEMPREGADO", label: "Desempregado(a)", hint: "Rescisão contratual + seguro-desemprego (se houver)" },
-  { value: "MEI", label: "Microempreendedor(a) individual (MEI)", hint: "Cartão CNPJ + DASN-SIMEI do ano anterior" },
-  { value: "EMPRESARIO", label: "Sócio(a) ou proprietário(a) de empresa", hint: "DECORE + IR da PJ + extratos PJ" },
-  { value: "PRODUTOR_RURAL", label: "Produtor(a) rural", hint: "Bloco de Produtor + ITR ou declaração do sindicato" },
-  { value: "APOSENTADO_PENSIONISTA", label: "Aposentado(a) ou pensionista", hint: "Demonstrativo do benefício do último mês" },
-  { value: "ESTAGIARIO_APRENDIZ", label: "Estagiário(a) ou jovem aprendiz", hint: "Contrato + comprovante de bolsa-auxílio" },
+export const INCOME_SITUATIONS: {
+  value: IncomeSituation;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "ASSALARIADO",
+    label: "Empregado(a) com carteira (CLT) ou servidor(a) público(a)",
+    hint: "Contracheques dos últimos 3 meses",
+  },
+  {
+    value: "AUTONOMO",
+    label: "Trabalhador(a) autônomo(a)",
+    hint: "Declaração de trabalho autônomo + RPA/extratos",
+  },
+  {
+    value: "LIBERAL",
+    label: "Profissional liberal (profissão regulamentada)",
+    hint: "DECORE dos últimos 3 meses (com CRC do contador)",
+  },
+  {
+    value: "INFORMAL",
+    label: "Trabalhador(a) informal (sem vínculo)",
+    hint: "Declaração de trabalho informal (gov.br)",
+  },
+  {
+    value: "SEM_RENDA",
+    label: "Sem atividade remunerada / do lar",
+    hint: "Declaração de ausência de renda (gov.br)",
+  },
+  {
+    value: "DESEMPREGADO",
+    label: "Desempregado(a)",
+    hint: "Rescisão contratual + seguro-desemprego (se houver)",
+  },
+  {
+    value: "MEI",
+    label: "Microempreendedor(a) individual (MEI)",
+    hint: "Cartão CNPJ + DASN-SIMEI do ano anterior",
+  },
+  {
+    value: "EMPRESARIO",
+    label: "Sócio(a) ou proprietário(a) de empresa",
+    hint: "DECORE + IR da PJ + extratos PJ",
+  },
+  {
+    value: "PRODUTOR_RURAL",
+    label: "Produtor(a) rural",
+    hint: "Bloco de Produtor + ITR ou declaração do sindicato",
+  },
+  {
+    value: "APOSENTADO_PENSIONISTA",
+    label: "Aposentado(a) ou pensionista",
+    hint: "Demonstrativo do benefício do último mês",
+  },
+  {
+    value: "ESTAGIARIO_APRENDIZ",
+    label: "Estagiário(a) ou jovem aprendiz",
+    hint: "Contrato + comprovante de bolsa-auxílio",
+  },
 ];
 
-export type HousingTenure = "PROPRIO" | "ALUGADO" | "CEDIDO" | "FINANCIADO" | "IRREGULAR";
+export type HousingTenure =
+  "PROPRIO" | "ALUGADO" | "CEDIDO" | "FINANCIADO" | "IRREGULAR";
 
 /** Como um tipo de documento se multiplica e quando é exigido (matriz dinâmica). */
 export type DocScope = "APPLICATION" | "EACH_MEMBER" | "EACH_ADULT";
@@ -161,8 +210,16 @@ export interface ApplicationDto {
   isPcd: boolean;
   isImtAffiliated: boolean;
   cycle: { id: string; label: string };
-  course: { id: string; name: string; campus: { code: string; name: string } } | null;
-  enem: { edition: number | null; registration: string | null; score: string | null };
+  course: {
+    id: string;
+    name: string;
+    campus: { code: string; name: string };
+  } | null;
+  enem: {
+    edition: number | null;
+    registration: string | null;
+    score: string | null;
+  };
   scholarshipKind: string | null;
   priority: string | null;
   call: PreselectionCall; // chamada (1ª/2ª/espera)
@@ -270,7 +327,14 @@ export interface SocioFormDto {
   };
   incomes: { id: string; label: string; amount: string; sign: number }[];
   expenses: { id: string; label: string; amount: string }[];
-  vehicles: { id: string; description: string; value: string | null; installment: string | null; status: string | null; cededBy: string | null }[];
+  vehicles: {
+    id: string;
+    description: string;
+    value: string | null;
+    installment: string | null;
+    status: string | null;
+    cededBy: string | null;
+  }[];
   summary: SocioSummaryDto;
 }
 
@@ -307,7 +371,8 @@ export interface RequiredDocumentsDto {
 }
 
 /** Estado de um documento no banco (espelha o enum DocumentStatus do Prisma). */
-export type DocumentStatusDb = "A_ENVIAR" | "ENVIADO" | "APROVADO" | "REPROVADO";
+export type DocumentStatusDb =
+  "A_ENVIAR" | "ENVIADO" | "APROVADO" | "REPROVADO";
 
 /** Documento já enviado (slot tipo × integrante) — usado para casar com a lista resolvida. */
 export interface UploadedDocumentDto {
@@ -399,11 +464,12 @@ export const DECISION_REASONS: Record<
 /** Candidato pré-selecionado (linha da matriz importada do MEC/manual). */
 /** Chamada do processo (define a janela de entrega de documentos). */
 export type PreselectionCall = "PRIMEIRA" | "SEGUNDA" | "ESPERA";
-export const PRESELECTION_CALLS: { value: PreselectionCall; label: string }[] = [
-  { value: "PRIMEIRA", label: "1ª chamada" },
-  { value: "SEGUNDA", label: "2ª chamada" },
-  { value: "ESPERA", label: "Lista de espera" },
-];
+export const PRESELECTION_CALLS: { value: PreselectionCall; label: string }[] =
+  [
+    { value: "PRIMEIRA", label: "1ª chamada" },
+    { value: "SEGUNDA", label: "2ª chamada" },
+    { value: "ESPERA", label: "Lista de espera" },
+  ];
 
 /** Situação pública do período de cadastro (tela inicial). */
 export interface RegistrationCallStatus {
@@ -521,9 +587,21 @@ export type OtherIncomeSource =
 
 /** Escopos possíveis de um documento (quantas vezes ele é exigido). */
 export const DOC_SCOPES: { value: DocScope; label: string; hint: string }[] = [
-  { value: "APPLICATION", label: "Uma vez por inscrição", hint: "Um único documento para toda a inscrição" },
-  { value: "EACH_MEMBER", label: "Um por integrante", hint: "Exigido de cada pessoa do grupo familiar" },
-  { value: "EACH_ADULT", label: "Um por maior de 18", hint: "Exigido de cada integrante com 18 anos ou mais" },
+  {
+    value: "APPLICATION",
+    label: "Uma vez por inscrição",
+    hint: "Um único documento para toda a inscrição",
+  },
+  {
+    value: "EACH_MEMBER",
+    label: "Um por integrante",
+    hint: "Exigido de cada pessoa do grupo familiar",
+  },
+  {
+    value: "EACH_ADULT",
+    label: "Um por maior de 18",
+    hint: "Exigido de cada integrante com 18 anos ou mais",
+  },
 ];
 
 /** Posses de imóvel (valores da condição HOUSING_TENURE). */
@@ -536,36 +614,101 @@ export const HOUSING_TENURES: { value: HousingTenure; label: string }[] = [
 ];
 
 /** Fontes de outra renda (valores da condição OTHER_INCOME). */
-export const OTHER_INCOME_SOURCES: { value: OtherIncomeSource; label: string }[] = [
+export const OTHER_INCOME_SOURCES: {
+  value: OtherIncomeSource;
+  label: string;
+}[] = [
   { value: "AJUDA_TERCEIROS", label: "Recebe ajuda financeira de terceiros" },
-  { value: "BENEFICIO_SOCIAL", label: "Recebe benefício social (BPC, Bolsa Família…)" },
+  {
+    value: "BENEFICIO_SOCIAL",
+    label: "Recebe benefício social (BPC, Bolsa Família…)",
+  },
   { value: "PENSAO_RECEBIDA", label: "Recebe pensão alimentícia" },
   { value: "PENSAO_PAGA", label: "Paga pensão alimentícia" },
-  { value: "PENSAO_NAO_RECEBIDA", label: "Deveria receber pensão e não recebe" },
+  {
+    value: "PENSAO_NAO_RECEBIDA",
+    label: "Deveria receber pensão e não recebe",
+  },
   { value: "ALUGUEL_RECEBIDO", label: "Recebe renda de aluguel" },
 ];
 
 /** Qual conjunto de valores uma condição usa (a UI monta o seletor a partir disso). */
-export type ConditionValueSet = "NONE" | "INCOME_SITUATION" | "HOUSING_TENURE" | "OTHER_INCOME";
+export type ConditionValueSet =
+  "NONE" | "INCOME_SITUATION" | "HOUSING_TENURE" | "OTHER_INCOME";
 
 /** Catálogo legível das condições que disparam um documento (ordenado para a UI). */
-export const DOC_CONDITIONS: { value: DocCondition; label: string; valueSet: ConditionValueSet }[] = [
-  { value: "ALWAYS", label: "Sempre exigido (dentro do escopo)", valueSet: "NONE" },
-  { value: "INCOME_SITUATION", label: "Conforme a situação de renda do integrante", valueSet: "INCOME_SITUATION" },
-  { value: "HOUSING_TENURE", label: "Conforme a posse do imóvel", valueSet: "HOUSING_TENURE" },
-  { value: "OTHER_INCOME", label: "Conforme a outra renda declarada", valueSet: "OTHER_INCOME" },
-  { value: "HAS_VEHICLE", label: "Quando a família declara possuir veículo", valueSet: "NONE" },
-  { value: "OPT_IN_COTAS", label: "Quando a inscrição concorre por cotas", valueSet: "NONE" },
-  { value: "GUARDIANSHIP", label: "Quando os pais não compõem o grupo familiar", valueSet: "NONE" },
-  { value: "IS_PCD", label: "Quando o candidato é pessoa com deficiência", valueSet: "NONE" },
-  { value: "IS_IMT_AFFILIATED", label: "Quando é funcionário/professor/dependente do IMT", valueSet: "NONE" },
-  { value: "HAS_UNDECLARED_ASSETS", label: "Quando declara bens não informados no IR", valueSet: "NONE" },
-  { value: "INCOME_COMMISSION_OVERTIME", label: "Quando o integrante recebe comissão ou hora extra", valueSet: "NONE" },
-  { value: "COMPANY_INACTIVE", label: "Quando é sócio de empresa inativa", valueSet: "NONE" },
+export const DOC_CONDITIONS: {
+  value: DocCondition;
+  label: string;
+  valueSet: ConditionValueSet;
+}[] = [
+  {
+    value: "ALWAYS",
+    label: "Sempre exigido (dentro do escopo)",
+    valueSet: "NONE",
+  },
+  {
+    value: "INCOME_SITUATION",
+    label: "Conforme a situação de renda do integrante",
+    valueSet: "INCOME_SITUATION",
+  },
+  {
+    value: "HOUSING_TENURE",
+    label: "Conforme a posse do imóvel",
+    valueSet: "HOUSING_TENURE",
+  },
+  {
+    value: "OTHER_INCOME",
+    label: "Conforme a outra renda declarada",
+    valueSet: "OTHER_INCOME",
+  },
+  {
+    value: "HAS_VEHICLE",
+    label: "Quando a família declara possuir veículo",
+    valueSet: "NONE",
+  },
+  {
+    value: "OPT_IN_COTAS",
+    label: "Quando a inscrição concorre por cotas",
+    valueSet: "NONE",
+  },
+  {
+    value: "GUARDIANSHIP",
+    label: "Quando os pais não compõem o grupo familiar",
+    valueSet: "NONE",
+  },
+  {
+    value: "IS_PCD",
+    label: "Quando o candidato é pessoa com deficiência",
+    valueSet: "NONE",
+  },
+  {
+    value: "IS_IMT_AFFILIATED",
+    label: "Quando é funcionário/professor/dependente do IMT",
+    valueSet: "NONE",
+  },
+  {
+    value: "HAS_UNDECLARED_ASSETS",
+    label: "Quando declara bens não informados no IR",
+    valueSet: "NONE",
+  },
+  {
+    value: "INCOME_COMMISSION_OVERTIME",
+    label: "Quando o integrante recebe comissão ou hora extra",
+    valueSet: "NONE",
+  },
+  {
+    value: "COMPANY_INACTIVE",
+    label: "Quando é sócio de empresa inativa",
+    valueSet: "NONE",
+  },
 ];
 
 /** Rótulo legível de um valor de condição, conforme o conjunto ao qual pertence. */
-export function conditionValueLabel(valueSet: ConditionValueSet, value: string): string {
+export function conditionValueLabel(
+  valueSet: ConditionValueSet,
+  value: string,
+): string {
   const find = (arr: { value: string; label: string }[]) =>
     arr.find((o) => o.value === value)?.label ?? value;
   if (valueSet === "INCOME_SITUATION") return find(INCOME_SITUATIONS);

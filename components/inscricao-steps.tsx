@@ -2,7 +2,12 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { applicationsApi, socioApi } from "@/lib/api";
-import type { SocioFormDto, SocioFormInput } from "@prouni/shared";
+import {
+  housingCompletionIssues,
+  studentCompletionIssues,
+  type SocioFormDto,
+  type SocioFormInput,
+} from "@prouni/shared";
 import { maskCep, maskMoney, maskNis, maskPhone } from "@/lib/format";
 import { IconCar, IconHouse, IconInfo, IconShield, IconWallet } from "@/components/icons";
 
@@ -57,12 +62,22 @@ function useSocioForm(appId: string | null) {
 
 /* ============ Passo: Dados do estudante ============ */
 
-export function StepEstudante({ appId }: { appId: string | null }) {
+export function StepEstudante({
+  appId,
+  onValidChange,
+}: {
+  appId: string | null;
+  onValidChange?: (valid: boolean) => void;
+}) {
   const { loading, form, setForm, save } = useSocioForm(appId);
   const app = useQuery({ queryKey: ["app-me"], queryFn: () => applicationsApi.me(), enabled: !!appId });
   const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }));
   // Placeholder do ano/semestre vem do ciclo ativo (ex.: "2026/2"); muda sozinho a cada ciclo.
   const yearTermPlaceholder = app.data?.cycle?.label ?? "2026/2";
+  const completionIssues = studentCompletionIssues(form);
+  const valid = !loading && completionIssues.length === 0;
+  useEffect(() => { onValidChange?.(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const yearTermInvalid = !loading && completionIssues.some((issue) => issue.field === "yearTerm");
 
   if (loading) return <p className="muted">Carregando…</p>;
   return (
@@ -80,14 +95,18 @@ export function StepEstudante({ appId }: { appId: string | null }) {
 
       <div className="form-grid" style={{ marginTop: 18 }}>
         <div className="field col-6">
-          <label className="field-label">Ano / semestre que cursará</label>
+          <label className="field-label">Ano / semestre que cursará<span className="req">*</span></label>
           <input
             className="input"
             placeholder={yearTermPlaceholder}
             maxLength={12}
             defaultValue={form.yearTerm ?? ""}
+            aria-invalid={yearTermInvalid}
+            style={yearTermInvalid ? { borderColor: "var(--red-500)" } : undefined}
+            onChange={(e) => set("yearTerm", e.target.value)}
             onBlur={(e) => { set("yearTerm", e.target.value); save({ yearTerm: e.target.value }); }}
           />
+          {yearTermInvalid && <span className="field-help" style={{ color: "var(--red-700)" }}>Informe no formato AAAA/1 ou AAAA/2.</span>}
         </div>
         <div className="field col-6">
           <label className="field-label">Cadastro Único — NIS</label>
@@ -139,6 +158,10 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
   const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null, cededBy: null };
+  const completionIssues = housingCompletionIssues(form, vehicles);
+  const valid = !loading && completionIssues.length === 0;
+  const hasIssue = (field: string) => !loading && completionIssues.some((issue) => issue.field === field);
+  const invalidStyle = (field: string) => hasIssue(field) ? { borderColor: "var(--red-500)" } : undefined;
 
   // Controlled state for CEP-autofillable address fields
   const [cepZip, setCepZip] = useState("");
@@ -149,7 +172,7 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
   const [addrSeeded, setAddrSeeded] = useState(false);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onValidChange(!!form.tenure); }, [form.tenure, loading]);
+  useEffect(() => { onValidChange(valid); }, [valid]);
 
   useEffect(() => {
     if (!loading && !addrSeeded) {
@@ -192,6 +215,9 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         : [],
     });
   };
+  const setVehicleDraft = (next: Partial<typeof veh>) => {
+    setVehicles([{ ...veh, ...next, id: veh.id || "tmp" }]);
+  };
 
   if (loading) return <p className="muted">Carregando…</p>;
   return (
@@ -201,19 +227,32 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         A <strong>posse do imóvel</strong> e a posse de veículo definem alguns documentos que serão pedidos
         na etapa de envio.
       </p>
+      {completionIssues.length > 0 && (
+        <div className="banner banner-danger" style={{ marginTop: 14, padding: "10px 12px" }}>
+          <div className="banner-body" style={{ color: "var(--red-700)" }}>
+            Preencha os campos obrigatórios destacados para continuar ({completionIssues.length} pendência(s)).
+          </div>
+        </div>
+      )}
 
       <h3 className="section-title" style={{ marginTop: 18 }}><IconHouse size={15} /> Endereço</h3>
       <div className="form-grid">
         {/* Linha 1: CEP primeiro → auto-preenche rua/bairro/cidade/estado */}
         <div className="field col-3">
-          <label className="field-label">CEP</label>
+          <label className="field-label">CEP<span className="req">*</span></label>
           <input
             className="input"
             inputMode="numeric"
             maxLength={9}
             placeholder="00000-000"
             value={cepZip}
-            onChange={(e) => setCepZip(maskCep(e.target.value))}
+            aria-invalid={hasIssue("zipCode")}
+            style={invalidStyle("zipCode")}
+            onChange={(e) => {
+              const value = maskCep(e.target.value);
+              setCepZip(value);
+              setField({ zipCode: value });
+            }}
             onBlur={(e) => {
               setField({ zipCode: e.target.value });
               save({ zipCode: e.target.value });
@@ -223,18 +262,20 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
           <span className="field-help">Digite o CEP para preencher o endereço.</span>
         </div>
         <div className="field col-7">
-          <label className="field-label">Rua / Avenida</label>
+          <label className="field-label">Rua / Avenida<span className="req">*</span></label>
           <input
             className="input"
             maxLength={150}
             value={cepStreet}
-            onChange={(e) => setCepStreet(e.target.value)}
+            aria-invalid={hasIssue("addressStreet")}
+            style={invalidStyle("addressStreet")}
+            onChange={(e) => { setCepStreet(e.target.value); setField({ addressStreet: e.target.value }); }}
             onBlur={(e) => { setField({ addressStreet: e.target.value }); save({ addressStreet: e.target.value }); }}
           />
         </div>
         <div className="field col-2">
-          <label className="field-label">Número</label>
-          <input className="input" inputMode="numeric" maxLength={10} defaultValue={form.addressNumber ?? ""} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} />
+          <label className="field-label">Número<span className="req">*</span></label>
+          <input className="input" inputMode="numeric" maxLength={10} defaultValue={form.addressNumber ?? ""} aria-invalid={hasIssue("addressNumber")} style={invalidStyle("addressNumber")} onChange={(e) => setField({ addressNumber: e.target.value })} onBlur={(e) => { setField({ addressNumber: e.target.value }); save({ addressNumber: e.target.value }); }} />
         </div>
         {/* Linha 2: Complemento, Bairro, Cidade, Estado */}
         <div className="field col-3">
@@ -242,30 +283,36 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
           <input className="input" maxLength={60} placeholder="Apto, bloco, casa…" defaultValue={form.addressUnit ?? ""} onBlur={(e) => { setField({ addressUnit: e.target.value }); save({ addressUnit: e.target.value }); }} />
         </div>
         <div className="field col-4">
-          <label className="field-label">Bairro</label>
+          <label className="field-label">Bairro<span className="req">*</span></label>
           <input
             className="input"
             maxLength={80}
             value={cepNeighborhood}
-            onChange={(e) => setCepNeighborhood(e.target.value)}
+            aria-invalid={hasIssue("neighborhood")}
+            style={invalidStyle("neighborhood")}
+            onChange={(e) => { setCepNeighborhood(e.target.value); setField({ neighborhood: e.target.value }); }}
             onBlur={(e) => { setField({ neighborhood: e.target.value }); save({ neighborhood: e.target.value }); }}
           />
         </div>
         <div className="field col-3">
-          <label className="field-label">Cidade</label>
+          <label className="field-label">Cidade<span className="req">*</span></label>
           <input
             className="input"
             maxLength={80}
             value={cepCity}
-            onChange={(e) => setCepCity(e.target.value)}
+            aria-invalid={hasIssue("city")}
+            style={invalidStyle("city")}
+            onChange={(e) => { setCepCity(e.target.value); setField({ city: e.target.value }); }}
             onBlur={(e) => { setField({ city: e.target.value }); save({ city: e.target.value }); }}
           />
         </div>
         <div className="field col-2">
-          <label className="field-label">Estado</label>
+          <label className="field-label">Estado<span className="req">*</span></label>
           <select
             className="select"
             value={cepState}
+            aria-invalid={hasIssue("state")}
+            style={invalidStyle("state")}
             onChange={(e) => {
               setCepState(e.target.value);
               setField({ state: e.target.value });
@@ -279,17 +326,17 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
           </select>
         </div>
         {/* Linha 3 */}
-        <div className="field col-12"><label className="field-label">Ponto de referência</label><input className="input" maxLength={200} defaultValue={form.reference ?? ""} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Telefone fixo</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.landline ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Celular do estudante</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.studentMobile ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ studentMobile: e.target.value }); save({ studentMobile: e.target.value }); }} /></div>
-        <div className="field col-5"><label className="field-label">Pai / mãe / responsável legal</label><input className="input" maxLength={120} defaultValue={form.guardianName ?? ""} onBlur={(e) => { setField({ guardianName: e.target.value }); save({ guardianName: e.target.value }); }} /></div>
-        <div className="field col-3"><label className="field-label">Celular do responsável</label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.guardianPhone ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ guardianPhone: e.target.value }); save({ guardianPhone: e.target.value }); }} /></div>
+        <div className="field col-12"><label className="field-label">Ponto de referência<span className="req">*</span></label><input className="input" maxLength={200} defaultValue={form.reference ?? ""} aria-invalid={hasIssue("reference")} style={invalidStyle("reference")} onChange={(e) => setField({ reference: e.target.value })} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Telefone fixo <span className="muted small">(opcional)</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.landline ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
+        <div className="field col-4"><label className="field-label">Celular do estudante<span className="req">*</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.studentMobile ?? ""} aria-invalid={hasIssue("studentMobile")} style={invalidStyle("studentMobile")} onChange={(e) => { e.target.value = maskPhone(e.target.value); setField({ studentMobile: e.target.value }); }} onBlur={(e) => { setField({ studentMobile: e.target.value }); save({ studentMobile: e.target.value }); }} /></div>
+        <div className="field col-5"><label className="field-label">Pai / mãe / responsável legal <span className="muted small">(opcional)</span></label><input className="input" maxLength={120} defaultValue={form.guardianName ?? ""} onBlur={(e) => { setField({ guardianName: e.target.value }); save({ guardianName: e.target.value }); }} /></div>
+        <div className="field col-3"><label className="field-label">Celular do responsável <span className="muted small">(opcional)</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.guardianPhone ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ guardianPhone: e.target.value }); save({ guardianPhone: e.target.value }); }} /></div>
       </div>
 
       <div className="divider" />
 
       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", marginBottom: 10 }}>
-        Tipo de imóvel
+        Tipo de imóvel<span className="req">*</span>
       </div>
       <div style={{ display: "flex", gap: 18, marginBottom: 16 }}>
         {(["CASA", "APARTAMENTO"] as const).map((o) => (
@@ -318,16 +365,16 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
 
       <div className="form-grid" style={{ marginTop: 14 }}>
         {form.tenure === "ALUGADO" && (
-          <div className="field col-4"><label className="field-label">Valor do aluguel</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.rentValue ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ rentValue: v ?? null }); save({ rentValue: v }); }} /></div>
+          <div className="field col-4"><label className="field-label">Valor do aluguel<span className="req">*</span></label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.rentValue ?? ""} aria-invalid={hasIssue("rentValue")} style={invalidStyle("rentValue")} onChange={(e) => { e.target.value = maskMoney(e.target.value); setField({ rentValue: toMoney(e.target.value) ?? null }); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ rentValue: v ?? null }); save({ rentValue: v }); }} /></div>
         )}
         {form.tenure === "FINANCIADO" && (
-          <div className="field col-4"><label className="field-label">Valor da prestação</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.installmentValue ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ installmentValue: v ?? null }); save({ installmentValue: v }); }} /></div>
+          <div className="field col-4"><label className="field-label">Valor da prestação<span className="req">*</span></label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={form.installmentValue ?? ""} aria-invalid={hasIssue("installmentValue")} style={invalidStyle("installmentValue")} onChange={(e) => { e.target.value = maskMoney(e.target.value); setField({ installmentValue: toMoney(e.target.value) ?? null }); }} onBlur={(e) => { const v = toMoney(e.target.value); setField({ installmentValue: v ?? null }); save({ installmentValue: v }); }} /></div>
         )}
         {form.tenure === "PROPRIO" && (
-          <div className="field col-4"><label className="field-label">Nº de matrícula do imóvel</label><input className="input" maxLength={40} defaultValue={form.propertyRegistry ?? ""} onBlur={(e) => { setField({ propertyRegistry: e.target.value }); save({ propertyRegistry: e.target.value }); }} /></div>
+          <div className="field col-4"><label className="field-label">Nº de matrícula do imóvel<span className="req">*</span></label><input className="input" maxLength={40} defaultValue={form.propertyRegistry ?? ""} aria-invalid={hasIssue("propertyRegistry")} style={invalidStyle("propertyRegistry")} onChange={(e) => setField({ propertyRegistry: e.target.value })} onBlur={(e) => { setField({ propertyRegistry: e.target.value }); save({ propertyRegistry: e.target.value }); }} /></div>
         )}
         {form.tenure === "CEDIDO" && (
-          <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)</label><input className="input" maxLength={150} defaultValue={form.cededOwnerInfo ?? ""} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
+          <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)<span className="req">*</span></label><input className="input" maxLength={150} defaultValue={form.cededOwnerInfo ?? ""} aria-invalid={hasIssue("cededOwnerInfo")} style={invalidStyle("cededOwnerInfo")} onChange={(e) => setField({ cededOwnerInfo: e.target.value })} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
         )}
       </div>
 
@@ -341,10 +388,10 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
       </div>
       {form.hasVehicle && (
         <div className="form-grid">
-          <div className="field col-5"><label className="field-label">Marca / modelo / ano</label><input className="input" maxLength={80} defaultValue={veh.description} onBlur={(e) => saveVehicle({ description: e.target.value })} /></div>
-          <div className="field col-3"><label className="field-label">Valor aproximado</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.value ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveVehicle({ value: toMoney(e.target.value) ?? null })} /></div>
-          <div className="field col-4"><label className="field-label">Situação</label>
-            <select className="select" defaultValue={veh.status ?? ""} onChange={(e) => saveVehicle({ status: (e.target.value || null) as never })}>
+          <div className="field col-5"><label className="field-label">Marca / modelo / ano<span className="req">*</span></label><input className="input" maxLength={80} defaultValue={veh.description} aria-invalid={hasIssue("vehicle.description")} style={invalidStyle("vehicle.description")} onChange={(e) => setVehicleDraft({ description: e.target.value })} onBlur={(e) => saveVehicle({ description: e.target.value })} /></div>
+          <div className="field col-3"><label className="field-label">Valor aproximado<span className="req">*</span></label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.value ?? ""} aria-invalid={hasIssue("vehicle.value")} style={invalidStyle("vehicle.value")} onChange={(e) => { e.target.value = maskMoney(e.target.value); setVehicleDraft({ value: toMoney(e.target.value) ?? null }); }} onBlur={(e) => saveVehicle({ value: toMoney(e.target.value) ?? null })} /></div>
+          <div className="field col-4"><label className="field-label">Situação<span className="req">*</span></label>
+            <select className="select" defaultValue={veh.status ?? ""} aria-invalid={hasIssue("vehicle.status")} style={invalidStyle("vehicle.status")} onChange={(e) => saveVehicle({ status: (e.target.value || null) as never })}>
               <option value="">Selecione…</option>
               <option value="PROPRIO">Próprio</option>
               <option value="FINANCIADO">Financiado</option>
@@ -352,10 +399,10 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
             </select>
           </div>
           {veh.status === "FINANCIADO" && (
-            <div className="field col-3"><label className="field-label">Valor da parcela</label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.installment ?? ""} onChange={(e) => { e.target.value = maskMoney(e.target.value); }} onBlur={(e) => saveVehicle({ installment: toMoney(e.target.value) ?? null })} /></div>
+            <div className="field col-3"><label className="field-label">Valor da parcela<span className="req">*</span></label><input className="input" placeholder="R$ 0,00" inputMode="decimal" maxLength={14} defaultValue={veh.installment ?? ""} aria-invalid={hasIssue("vehicle.installment")} style={invalidStyle("vehicle.installment")} onChange={(e) => { e.target.value = maskMoney(e.target.value); setVehicleDraft({ installment: toMoney(e.target.value) ?? null }); }} onBlur={(e) => saveVehicle({ installment: toMoney(e.target.value) ?? null })} /></div>
           )}
           {veh.status === "CEDIDO" && (
-            <div className="field col-8"><label className="field-label">Cedido por quem?</label><input className="input" maxLength={80} defaultValue={veh.cededBy ?? ""} onBlur={(e) => saveVehicle({ cededBy: e.target.value })} /></div>
+            <div className="field col-8"><label className="field-label">Cedido por quem?<span className="req">*</span></label><input className="input" maxLength={80} defaultValue={veh.cededBy ?? ""} aria-invalid={hasIssue("vehicle.cededBy")} style={invalidStyle("vehicle.cededBy")} onChange={(e) => setVehicleDraft({ cededBy: e.target.value })} onBlur={(e) => saveVehicle({ cededBy: e.target.value })} /></div>
           )}
         </div>
       )}
