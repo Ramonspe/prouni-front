@@ -2,7 +2,7 @@ name: Deploy Front → ECS
 
 on:
   push:
-    branches: [prd]
+    branches: [main]
 
 env:
   AWS_REGION: sa-east-1

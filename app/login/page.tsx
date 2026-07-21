@@ -121,7 +121,7 @@ export default function LoginPage() {
                   id="pwd"
                   type={showPwd ? "text" : "password"}
                   className="input"
-                  placeholder="Senha enviada por e-mail"
+                  placeholder="Digite a senha cadastrada"
                   maxLength={72}
                   value={pwd}
                   onChange={(e) => setPwd(e.target.value)}
