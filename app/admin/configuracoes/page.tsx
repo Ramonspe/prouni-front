@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { Badge, Banner } from "@/components/ui";
 import { IconCheck, IconLock, IconPlus, IconRefresh, IconSearch, IconTrash, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
-import { authApi, preselectionApi } from "@/lib/api";
+import { authApi, coursesApi, preselectionApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { maskCpf } from "@/lib/format";
 import { PRESELECTION_CALLS, type PreselectionCall, type PreselectionEntryDto, type PreselectionImportResult, type PreselectionInput } from "@prouni/shared";
@@ -63,6 +63,14 @@ export default function ConfiguracoesPage() {
   const importMut = useMutation({
     mutationFn: (vars: { file: File; call: string }) => preselectionApi.import(vars.file, vars.call),
     onSuccess: (r) => { setImportResult(r); invalidate(); if (fileRef.current) fileRef.current.value = ""; },
+  });
+  // Campi e cursos reais para as listas suspensas do cadastro (evita digitar
+  // nome de curso que não casa — ex.: "Engenharia da/de Computação").
+  const campusesQuery = useQuery({ queryKey: ["campuses"], queryFn: () => coursesApi.campuses(), enabled: !!user });
+  const coursesQuery = useQuery({
+    queryKey: ["courses", form.campusHint],
+    queryFn: () => coursesApi.courses(form.campusHint || undefined),
+    enabled: !!user && !!form.campusHint,
   });
   const resetPasswordMut = useMutation({
     mutationFn: (vars: { candidateId: string; password: string }) => authApi.resetCandidatePassword(vars.candidateId, vars.password),
@@ -187,12 +195,18 @@ export default function ConfiguracoesPage() {
                   <input className="input" maxLength={120} value={form.fullName ?? ""} onChange={set("fullName")} />
                 </div>
                 <div className="field">
-                  <label className="field-label">Curso</label>
-                  <input className="input" maxLength={120} value={form.courseHint ?? ""} onChange={set("courseHint")} />
+                  <label className="field-label">Campus</label>
+                  <select className="input" value={form.campusHint ?? ""} onChange={(e) => setForm((f) => ({ ...f, campusHint: e.target.value, courseHint: "" }))}>
+                    <option value="">Selecione o campus…</option>
+                    {(campusesQuery.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div className="field">
-                  <label className="field-label">Campus</label>
-                  <input className="input" placeholder="SCS / SP" maxLength={40} value={form.campusHint ?? ""} onChange={set("campusHint")} />
+                  <label className="field-label">Curso</label>
+                  <select className="input" value={form.courseHint ?? ""} onChange={(e) => setForm((f) => ({ ...f, courseHint: e.target.value }))} disabled={!form.campusHint}>
+                    <option value="">{form.campusHint ? "Selecione o curso…" : "Selecione o campus primeiro"}</option>
+                    {(coursesQuery.data ?? []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div className="field">
                   <label className="field-label">Inscrição ENEM</label>
