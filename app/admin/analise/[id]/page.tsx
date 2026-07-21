@@ -81,6 +81,18 @@ function fmtMoney(v: string | null): string {
     ? "—"
     : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+/** Converte a vírgula decimal usada no Brasil para o formato enviado à API. */
+function normalizeIncome(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(",", ".");
+  if (!/^\d{1,12}(\.\d{1,2})?$/.test(normalized)) {
+    throw new Error("Informe a renda no formato 500,02 ou 500.02.");
+  }
+  return normalized;
+}
+
 function fmtWhen(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", {
     day: "2-digit",
@@ -223,7 +235,7 @@ export default function AnalysisPage() {
   const incomeMut = useMutation({
     mutationFn: () =>
       adminApi.setIncome(params.id, {
-        grossIncome: grossIncome.trim() || null,
+        grossIncome: normalizeIncome(grossIncome),
         note: incomeNote.trim() || null,
       }),
     onSuccess: invalidate,
@@ -932,7 +944,7 @@ export default function AnalysisPage() {
                   <input
                     className="input"
                     inputMode="decimal"
-                    placeholder="ex.: 3500.00"
+                    placeholder="ex.: 3500,00"
                   value={grossIncome}
                   disabled={!canPerformAnalystActions}
                     onChange={(e) => setGrossIncome(e.target.value)}
