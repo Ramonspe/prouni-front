@@ -65,9 +65,11 @@ function useSocioForm(appId: string | null) {
 export function StepEstudante({
   appId,
   onValidChange,
+  showErrors = true,
 }: {
   appId: string | null;
   onValidChange?: (valid: boolean) => void;
+  showErrors?: boolean;
 }) {
   const { loading, form, setForm, save } = useSocioForm(appId);
   const app = useQuery({ queryKey: ["app-me"], queryFn: () => applicationsApi.me(), enabled: !!appId });
@@ -77,7 +79,7 @@ export function StepEstudante({
   const completionIssues = studentCompletionIssues(form);
   const valid = !loading && completionIssues.length === 0;
   useEffect(() => { onValidChange?.(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
-  const yearTermInvalid = !loading && completionIssues.some((issue) => issue.field === "yearTerm");
+  const yearTermInvalid = showErrors && !loading && completionIssues.some((issue) => issue.field === "yearTerm");
 
   if (loading) return <p className="muted">Carregando…</p>;
   return (
@@ -86,6 +88,13 @@ export function StepEstudante({
       <p className="signup-sub">
         Nome, CPF e curso já vieram das etapas anteriores. Complete os dados acadêmicos abaixo.
       </p>
+      {showErrors && completionIssues.length > 0 && (
+        <div className="banner banner-danger" style={{ marginTop: 14, padding: "10px 12px" }}>
+          <div className="banner-body" style={{ color: "var(--red-700)" }}>
+            Preencha os campos obrigatórios destacados para continuar ({completionIssues.length} pendência(s)).
+          </div>
+        </div>
+      )}
 
       <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 16 }}>
         <div className="stat"><div className="stat-label">Curso</div><div style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 14 }}>{app.data?.course?.name ?? "—"}</div></div>
@@ -154,13 +163,21 @@ const TENURES: [string, string, string][] = [
   ["IRREGULAR", "Irregular", "Declaração do morador"],
 ];
 
-export function StepMoradia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
+export function StepMoradia({
+  appId,
+  onValidChange,
+  showErrors = true,
+}: {
+  appId: string | null;
+  onValidChange: (v: boolean) => void;
+  showErrors?: boolean;
+}) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
   const veh = vehicles[0] ?? { id: "", description: "", value: null, installment: null, status: null, cededBy: null };
   const completionIssues = housingCompletionIssues(form, vehicles);
   const valid = !loading && completionIssues.length === 0;
-  const hasIssue = (field: string) => !loading && completionIssues.some((issue) => issue.field === field);
+  const hasIssue = (field: string) => showErrors && !loading && completionIssues.some((issue) => issue.field === field);
   const invalidStyle = (field: string) => hasIssue(field) ? { borderColor: "var(--red-500)" } : undefined;
 
   // Controlled state for CEP-autofillable address fields
@@ -227,7 +244,7 @@ export function StepMoradia({ appId, onValidChange }: { appId: string | null; on
         A <strong>posse do imóvel</strong> e a posse de veículo definem alguns documentos que serão pedidos
         na etapa de envio.
       </p>
-      {completionIssues.length > 0 && (
+      {showErrors && completionIssues.length > 0 && (
         <div className="banner banner-danger" style={{ marginTop: 14, padding: "10px 12px" }}>
           <div className="banner-body" style={{ color: "var(--red-700)" }}>
             Preencha os campos obrigatórios destacados para continuar ({completionIssues.length} pendência(s)).
