@@ -380,7 +380,15 @@ function StepCurso({
   );
 }
 
-export function StepFamilia({ appId, onValidChange }: { appId: string | null; onValidChange: (v: boolean) => void }) {
+export function StepFamilia({
+  appId,
+  onValidChange,
+  showErrors = true,
+}: {
+  appId: string | null;
+  onValidChange: (v: boolean) => void;
+  showErrors?: boolean;
+}) {
   const qc = useQueryClient();
   const members = useQuery({
     queryKey: ["family", appId],
@@ -428,7 +436,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
   const completionIssues = familyCompletionIssues(list);
   const valid = !members.isLoading && completionIssues.length === 0;
   const hasIssue = (memberId: string, field: string) =>
-    completionIssues.some((issue) => issue.memberId === memberId && issue.field === field);
+    showErrors && completionIssues.some((issue) => issue.memberId === memberId && issue.field === field);
   const invalidStyle = (memberId: string, field: string) =>
     hasIssue(memberId, field) ? { borderColor: "var(--red-500)" } : undefined;
   useEffect(() => { onValidChange(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -444,7 +452,7 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
         cada membro será necessário enviar documentos de identificação, comprovante de residência e — para
         os maiores de 18 anos — comprovantes de renda. As alterações são salvas automaticamente.
       </p>
-      {!members.isLoading && completionIssues.length > 0 && (
+      {showErrors && !members.isLoading && completionIssues.length > 0 && (
         <div className="banner banner-danger" style={{ marginTop: 14, padding: "10px 12px" }}>
           <div className="banner-body" style={{ color: "var(--red-700)" }}>
             Preencha os campos obrigatórios destacados para continuar ({completionIssues.length} pendência(s)).
@@ -747,7 +755,15 @@ export function StepFamilia({ appId, onValidChange }: { appId: string | null; on
   );
 }
 
-function StepDocs({ appId, onValidChange }: { appId: string | null; onValidChange: (valid: boolean) => void }) {
+function StepDocs({
+  appId,
+  onValidChange,
+  showErrors,
+}: {
+  appId: string | null;
+  onValidChange: (valid: boolean) => void;
+  showErrors: boolean;
+}) {
   const qc = useQueryClient();
   const docs = useQuery({
     queryKey: ["required-docs", appId],
@@ -806,7 +822,7 @@ function StepDocs({ appId, onValidChange }: { appId: string | null; onValidChang
           <div className="banner-body" style={{ color: "var(--red-700)" }}>{upErr}</div>
         </div>
       )}
-      {!docs.isLoading && !uploaded.isLoading && data && !valid && (
+      {showErrors && !docs.isLoading && !uploaded.isLoading && data && !valid && (
         <div className="banner banner-danger" style={{ marginTop: 12, padding: "10px 12px" }}>
           <div className="banner-body" style={{ color: "var(--red-700)" }}>
             Envie todos os documentos obrigatórios para continuar ({sentRequiredCount}/{requiredItems.length}).
@@ -1005,6 +1021,7 @@ export default function InscricaoPage() {
     docs: false,
     revisao: false,
   });
+  const [validationAttempted, setValidationAttempted] = useState<Record<string, boolean>>({});
 
   const updateValidity = (key: string, value: boolean) => {
     setValid((current) => current[key] === value ? current : { ...current, [key]: value });
@@ -1044,6 +1061,11 @@ export default function InscricaoPage() {
 
   const next = async () => {
     setErr("");
+    if (["estudante", "familia", "moradia", "docs"].includes(step) && !valid[step]) {
+      setValidationAttempted((current) => current[step] ? current : { ...current, [step]: true });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     try {
       if (step === "curso") {
         if (!courseId) {
@@ -1121,11 +1143,11 @@ export default function InscricaoPage() {
           onCourse={setCourseId}
         />
       )}
-      {step === "estudante" && <StepEstudante appId={appId} onValidChange={(v) => updateValidity("estudante", v)} />}
-      {step === "familia" && <StepFamilia appId={appId} onValidChange={(v) => updateValidity("familia", v)} />}
-      {step === "moradia" && <StepMoradia appId={appId} onValidChange={(v) => updateValidity("moradia", v)} />}
+      {step === "estudante" && <StepEstudante appId={appId} showErrors={!!validationAttempted.estudante} onValidChange={(v) => updateValidity("estudante", v)} />}
+      {step === "familia" && <StepFamilia appId={appId} showErrors={!!validationAttempted.familia} onValidChange={(v) => updateValidity("familia", v)} />}
+      {step === "moradia" && <StepMoradia appId={appId} showErrors={!!validationAttempted.moradia} onValidChange={(v) => updateValidity("moradia", v)} />}
       {step === "renda" && <StepRendaDespesas appId={appId} />}
-      {step === "docs" && <StepDocs appId={appId} onValidChange={(v) => updateValidity("docs", v)} />}
+      {step === "docs" && <StepDocs appId={appId} showErrors={!!validationAttempted.docs} onValidChange={(v) => updateValidity("docs", v)} />}
       {step === "revisao" && <StepRevisao appId={appId} onReadyChange={(v) => updateValidity("revisao", v)} />}
 
       {step !== "account" && err && (
@@ -1135,7 +1157,7 @@ export default function InscricaoPage() {
       )}
 
       {step !== "account" && (
-        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (["estudante", "familia", "moradia", "docs", "revisao"].includes(step) && !valid[step])} onNext={next} onBack={back} />
+        <SignupFooter nextLabel={nextLabel} canBack={stepIdx > 1} disabled={saving || (step === "revisao" && !valid.revisao)} onNext={next} onBack={back} />
       )}
     </SignupShell>
   );
