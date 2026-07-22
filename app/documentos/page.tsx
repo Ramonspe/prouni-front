@@ -7,6 +7,7 @@ import { Badge, Banner } from "@/components/ui";
 import { IconCheck, IconChevR, IconDownload, IconFile, IconInfo, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { applicationsApi, documentsApi, familyApi, socioApi } from "@/lib/api";
+import { needsPdfRegeneration, PDF_REGENERATION_MESSAGE } from "@/lib/pdf-upload-preflight";
 import {
   applicationCompletionIssues,
   type BadgeTone,
@@ -75,8 +76,10 @@ function DocDetail({
 }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
+  const pickVersionRef = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [checkingFile, setCheckingFile] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   const st = statusInfo(uploaded, item.required);
@@ -90,8 +93,11 @@ function DocDetail({
     },
   });
 
-  function pick(f: File | null | undefined) {
+  async function pick(f: File | null | undefined) {
+    const pickVersion = ++pickVersionRef.current;
     setLocalError(null);
+    setFile(null);
+    setCheckingFile(false);
     if (!f) return;
     if (!ALLOWED_MIME.includes(f.type)) {
       setLocalError("Formato inválido. Envie PDF, JPG ou PNG.");
@@ -101,6 +107,26 @@ function DocDetail({
       setLocalError("Arquivo acima de 10 MB.");
       return;
     }
+
+    setCheckingFile(true);
+    try {
+      const needsRegeneration = await needsPdfRegeneration(f);
+      if (pickVersion !== pickVersionRef.current) return;
+
+      if (needsRegeneration) {
+        setFile(null);
+        setLocalError(PDF_REGENERATION_MESSAGE);
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
+    } catch {
+      // A pré-validação é apenas orientativa. Nunca impedir um envio válido se
+      // o navegador não conseguir ler o arquivo localmente.
+    } finally {
+      if (pickVersion === pickVersionRef.current) setCheckingFile(false);
+    }
+
+    if (pickVersion !== pickVersionRef.current) return;
     setFile(f);
   }
 
@@ -187,7 +213,7 @@ function DocDetail({
           type="file"
           accept={ACCEPT}
           style={{ display: "none" }}
-          onChange={(e) => pick(e.target.files?.[0])}
+          onChange={(e) => { void pick(e.target.files?.[0]); }}
         />
         <div
           className="dropzone"
@@ -201,7 +227,7 @@ function DocDetail({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            pick(e.dataTransfer.files?.[0]);
+            void pick(e.dataTransfer.files?.[0]);
           }}
         >
           <IconUpload size={22} style={{ marginBottom: 8, color: "var(--ink-500)" }} />
@@ -251,10 +277,10 @@ function DocDetail({
         <button
           className="btn btn-primary btn-block"
           style={{ marginTop: 10 }}
-          disabled={!file || mutation.isPending}
+          disabled={!file || mutation.isPending || checkingFile}
           onClick={() => file && mutation.mutate(file)}
         >
-          {mutation.isPending ? "Enviando…" : st.hasFile ? "Reenviar arquivo" : "Confirmar envio"}
+          {checkingFile ? "Verificando arquivo…" : mutation.isPending ? "Enviando…" : st.hasFile ? "Reenviar arquivo" : "Confirmar envio"}
         </button>
         </>
         )}
