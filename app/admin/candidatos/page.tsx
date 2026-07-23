@@ -1,13 +1,13 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
-import { Avatar, StatusBadge } from "@/components/ui";
-import { IconArrowDown, IconArrowUp, IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch } from "@/components/icons";
+import { Avatar, Banner, StatusBadge } from "@/components/ui";
+import { IconArrowDown, IconArrowUp, IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch, IconUpload } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
-import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus } from "@prouni/shared";
+import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus, type RmBulkExportResult } from "@prouni/shared";
 
 type Tab = "all" | "review" | "pending" | "decided";
 type SortKey = "protocol" | "name" | "status" | "updatedAt";
@@ -65,6 +65,7 @@ function exportCsv(rows: AdminApplicationRow[]): void {
 
 function CandidatosInner() {
   const router = useRouter();
+  const qc = useQueryClient();
   const { user, loading } = useRequireStaff();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("all");
@@ -76,6 +77,8 @@ function CandidatosInner() {
   const [dateFilter, setDateFilter] = useState("all"); // "all" | dias ("1" | "7" | "30")
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [selectedRmIds, setSelectedRmIds] = useState<string[]>([]);
+  const [bulkExportResult, setBulkExportResult] = useState<RmBulkExportResult | null>(null);
   // Busca vinda da barra do topo (?q=) — sincroniza quando a URL muda.
   useEffect(() => {
     const q = searchParams.get("q");
@@ -145,6 +148,46 @@ function CandidatosInner() {
       });
   }, [all, analystFilter, callFilter, courseFilter, dateFilter, search, sortDirection, sortKey, statusFilter, tab]);
   const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
+  const exportableRows = useMemo(
+    () => tab === "decided" ? rows.filter((c) => c.status === "classificado") : [],
+    [rows, tab],
+  );
+  const selectedRmIdSet = useMemo(() => new Set(selectedRmIds), [selectedRmIds]);
+  const selectedExportableRmIds = useMemo(
+    () => selectedRmIds.filter((id) => exportableRows.some((c) => c.id === id)),
+    [exportableRows, selectedRmIds],
+  );
+  const allExportableSelected = exportableRows.length > 0 && exportableRows.every((c) => selectedRmIdSet.has(c.id));
+  const canExportManyToRm = canRefresh && selectedExportableRmIds.length > 0 && tab === "decided";
+
+  useEffect(() => {
+    const exportableIds = new Set(exportableRows.map((c) => c.id));
+    setSelectedRmIds((current) => {
+      const next = current.filter((id) => exportableIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [exportableRows]);
+
+  const exportManyToRmMut = useMutation({
+    mutationFn: (applicationIds: string[]) => adminApi.exportManyToRm(applicationIds),
+    onSuccess: (result) => {
+      setBulkExportResult(result);
+      setSelectedRmIds([]);
+      qc.invalidateQueries({ queryKey: ["admin", "applications"] });
+    },
+  });
+
+  const toggleRmSelection = (applicationId: string) => {
+    setSelectedRmIds((current) =>
+      current.includes(applicationId)
+        ? current.filter((id) => id !== applicationId)
+        : [...current, applicationId],
+    );
+  };
+
+  const toggleAllRmSelection = () => {
+    setSelectedRmIds(allExportableSelected ? [] : exportableRows.map((c) => c.id));
+  };
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -190,6 +233,9 @@ function CandidatosInner() {
           </div>
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
             {canRefresh && <button className="btn btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={14} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
+            <button className="btn btn-primary" disabled={!canExportManyToRm || exportManyToRmMut.isPending} title={canRefresh ? "Selecione candidatos classificados na aba Decididos para exportar ao RM" : "Apenas administradores e analistas podem exportar ao RM"} onClick={() => { if (confirm(`Exportar ${selectedExportableRmIds.length} candidato(s) selecionado(s) para o RM?`)) { setBulkExportResult(null); exportManyToRmMut.mutate(selectedExportableRmIds); } }}>
+              <IconUpload size={14} /> {exportManyToRmMut.isPending ? "Exportando…" : "Exportar para RM"}
+            </button>
             <button className="btn btn-ghost" onClick={() => exportCsv(rows)} disabled={rows.length === 0} title="Baixar a lista atual em CSV">
               <IconDownload size={14} /> Exportar CSV
             </button>
@@ -242,10 +288,45 @@ function CandidatosInner() {
           <div style={{ flex: 1 }} />
         </div>
 
+        {exportManyToRmMut.isError && (
+          <Banner tone="danger" title="Não foi possível iniciar a exportação">
+            {(exportManyToRmMut.error as Error).message}
+          </Banner>
+        )}
+
+        {bulkExportResult && (
+          <div className="card no-print" style={{ marginBottom: 14 }}>
+            <div className="card-body">
+              <Banner tone={bulkExportResult.failed ? "warn" : "success"} title="Exportação para o RM concluída">
+                {bulkExportResult.exported + bulkExportResult.already} de {bulkExportResult.total} integrado(s) com sucesso
+                {` · ${bulkExportResult.exported} novo(s) exportado(s)`}
+                {bulkExportResult.already ? ` · ${bulkExportResult.already} já cadastrado(s) no RM` : ""}
+                {bulkExportResult.failed ? ` · ${bulkExportResult.failed} falha(s)` : ""}.
+              </Banner>
+              {bulkExportResult.failed > 0 && (
+                <div className="muted small" style={{ marginTop: 10, maxHeight: 180, overflow: "auto" }}>
+                  {bulkExportResult.items.filter((item) => item.outcome === "failed").map((item) => (
+                    <div key={item.applicationId} style={{ marginBottom: 5 }}>
+                      <strong>{item.protocol ?? "Inscrição não encontrada"}</strong>
+                      {item.candidateName ? ` · ${item.candidateName}` : ""}
+                      {` — ${item.message ?? "Falha sem detalhe disponível."}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="table">
             <thead>
               <tr>
+                {tab === "decided" && (
+                  <th style={{ width: 42 }}>
+                    <input type="checkbox" checked={allExportableSelected} disabled={exportableRows.length === 0 || exportManyToRmMut.isPending} onChange={toggleAllRmSelection} aria-label="Selecionar todos os candidatos classificados visíveis" title="Selecionar todos os classificados visíveis" />
+                  </th>
+                )}
                 <th aria-sort={sortKey === "protocol" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("protocol", "Protocolo")}</th>
                 <th aria-sort={sortKey === "name" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>{sortHeader("name", "Candidato")}</th>
                 <th>Curso</th><th>Chamada</th>
@@ -256,14 +337,23 @@ function CandidatosInner() {
             </thead>
             <tbody>
               {loading || query.isLoading ? (
-                <tr><td colSpan={10} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando candidatos…</td></tr>
+                <tr><td colSpan={tab === "decided" ? 11 : 10} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando candidatos…</td></tr>
               ) : query.isError ? (
-                <tr><td colSpan={10} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar os candidatos.</td></tr>
+                <tr><td colSpan={tab === "decided" ? 11 : 10} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar os candidatos.</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={10} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum candidato encontrado.</td></tr>
+                <tr><td colSpan={tab === "decided" ? 11 : 10} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum candidato encontrado.</td></tr>
               ) : (
                 rows.map((c) => (
-                  <tr key={c.id} onClick={() => router.push(`/admin/analise/${c.id}`)}>
+                  <tr key={c.id} className={selectedRmIdSet.has(c.id) ? "selected" : ""} onClick={() => router.push(`/admin/analise/${c.id}`)}>
+                    {tab === "decided" && (
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {c.status === "classificado" ? (
+                          <input type="checkbox" checked={selectedRmIdSet.has(c.id)} disabled={exportManyToRmMut.isPending} onChange={() => toggleRmSelection(c.id)} aria-label={`Selecionar ${c.name} para exportar ao RM`} />
+                        ) : (
+                          <span className="muted small" title="Somente candidatos classificados podem ser exportados ao RM">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="mono" style={{ color: "var(--ink-700)" }}>{c.protocol}</td>
                     <td>
                       <div className="row-with-avatar">
