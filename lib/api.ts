@@ -10,6 +10,7 @@ import type {
   PreselectionEntryDto,
   PreselectionImportResult,
   PreselectionInput,
+  RmBulkExportResult,
   UserDto,
   UserCreateInput,
   UserUpdateInput,
@@ -377,6 +378,12 @@ export const adminApi = {
   /** Exporta a inscrição (classificado) para o TOTVS RM e devolve o detalhe atualizado. */
   exportToRm: (appId: string) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, { method: "POST" }),
+  /** Exporta uma seleção de candidatos classificados ao TOTVS RM. */
+  exportManyToRm: (applicationIds: string[]) =>
+    apiFetch<RmBulkExportResult>("/admin/applications/rm-export", {
+      method: "POST",
+      body: { applicationIds },
+    }),
   /** Reverte a exportação (corretivo, ADMIN): limpa o vínculo com o RM e volta o status. */
   revertRm: (appId: string) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export/revert`, { method: "POST" }),

@@ -405,6 +405,25 @@ export interface AdminApplicationRow {
   updatedAt: string; // ISO
 }
 
+/** Resultado de uma inscrição no envio em massa ao TOTVS RM. */
+export interface RmBulkExportItemResult {
+  applicationId: string;
+  protocol: string | null;
+  candidateName: string | null;
+  outcome: "exported" | "already" | "failed";
+  numeroInscricao: string | null;
+  message?: string;
+}
+
+/** Resumo do envio em massa ao TOTVS RM, com retorno individual para conferência. */
+export interface RmBulkExportResult {
+  total: number;
+  exported: number;
+  already: number;
+  failed: number;
+  items: RmBulkExportItemResult[];
+}
+
 /** Documento enviado, visão do analista (slot + tipo + integrante + revisão). */
 export interface AdminDocumentDto {
   documentId: string | null; // id do slot Document (null se ainda não há slot criado)
