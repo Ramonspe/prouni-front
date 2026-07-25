@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { changePasswordSchema } from "@prouni/shared";
 import { ApiError, authApi } from "@/lib/api";
 import { IconAlert, IconCheck, IconLock } from "./icons";
@@ -12,6 +13,14 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !loading) onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [loading, onClose]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,14 +45,20 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  return (
-    <div className="cpw-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="cpw-card" onClick={(e) => e.stopPropagation()}>
+  const modal = (
+    <div className="cpw-overlay" onClick={onClose}>
+      <div
+        className="cpw-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="change-password-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="cpw-head">
-          <h3 style={{ display: "flex", alignItems: "center", gap: 8, margin: 0, fontSize: 16, color: "var(--ink-900)" }}>
+          <h3 id="change-password-title" className="cpw-title">
             <IconLock size={16} /> Alterar senha
           </h3>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">✕</button>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar" disabled={loading}>✕</button>
         </div>
 
         {done ? (
@@ -57,7 +72,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         ) : (
-          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <form className="cpw-form" onSubmit={submit}>
             <div className="field">
               <label className="field-label">Senha atual<span className="req">*</span></label>
               <input type="password" className="input" maxLength={72} value={current} autoComplete="current-password"
@@ -82,11 +97,11 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose} disabled={loading}>
+            <div className="cpw-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose} disabled={loading}>
                 Cancelar
               </button>
-              <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={loading}>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
                 {loading ? "Salvando…" : "Salvar"}
               </button>
             </div>
@@ -95,4 +110,6 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

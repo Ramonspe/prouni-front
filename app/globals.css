@@ -380,6 +380,65 @@ a { color: var(--blue-700); text-decoration: none; }
   background: none; border: none; cursor: pointer;
 }
 
+/* ---------- Modal: alterar senha ---------- */
+.cpw-overlay {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(11, 18, 32, 0.52);
+  backdrop-filter: blur(2px);
+}
+.cpw-card {
+  width: min(100%, 440px);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 20px;
+  background: var(--white);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+.cpw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--ink-150);
+}
+.cpw-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-900);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.cpw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cpw-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.cpw-actions .btn { min-width: 102px; justify-content: center; }
+
+@media (max-width: 480px) {
+  .cpw-overlay { align-items: end; padding: 12px; }
+  .cpw-card { max-height: calc(100vh - 24px); padding: 18px; }
+  .cpw-head { margin-bottom: 16px; padding-bottom: 14px; }
+  .cpw-actions .btn { flex: 1; min-width: 0; }
+}
+
 .checkbox {
   display: flex; align-items: flex-start; gap: 10px;
   cursor: pointer; font-size: 13px; color: var(--ink-800);
