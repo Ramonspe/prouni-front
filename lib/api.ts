@@ -13,6 +13,7 @@ import type {
   RmBulkExportResult,
   UserDto,
   UserCreateInput,
+  UserPermissionsInput,
   UserUpdateInput,
   MaintenanceSummaryDto,
   MaintenanceResetResult,
@@ -22,6 +23,7 @@ import type {
   DocMatrixSyncResult,
   CourseSyncResult,
   ApplicationDto,
+  ApplicationDeclarationsInput,
   ApplicationEventDto,
   CampusDto,
   CourseDto,
@@ -31,13 +33,23 @@ import type {
   CourseUpsertInput,
   DocCategoryUpsertInput,
   DocTypeUpsertInput,
+  CallScheduleInput,
   CycleDto,
   DocumentCategoryDto,
   FamilyMemberDto,
   FamilyMemberInput,
   RequiredDocumentsDto,
+  OpportunityClaimResult,
+  OpportunityDto,
+  PendingExtensionInput,
+  PendingRequestInput,
+  PendingRequestDto,
+  SelectionCallDto,
+  SelectionCallInput,
+  SelectionCallSummaryDto,
   SocioFormDto,
   SocioFormInput,
+  SystemPermissionName,
   UploadedDocumentDto,
 } from "@prouni/shared";
 
@@ -45,7 +57,8 @@ import type {
 // refresh token vive em cookie httpOnly setado pela API. Em 401, tenta um
 // refresh único (single-flight) e refaz a requisição.
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001") + "/api/v1";
+const API_BASE =
+  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001") + "/api/v1";
 
 let accessToken: string | null = null;
 export function setAccessToken(token: string | null) {
@@ -73,6 +86,7 @@ export interface SessionUser {
   email: string;
   role: string;
   impersonating: boolean;
+  permissions: SystemPermissionName[];
 }
 export interface AuthResponse {
   accessToken: string;
@@ -87,7 +101,10 @@ function refreshAccess(): Promise<boolean> {
   if (!refreshPromise) {
     const p = (async () => {
       try {
-        const res = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "include" });
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
         if (!res.ok) return false;
         const data = (await res.json()) as AuthResponse;
         accessToken = data.accessToken ?? null;
@@ -143,11 +160,21 @@ interface FetchOpts {
   retry?: boolean;
 }
 
-export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
-  const { method = "GET", body, headers = {}, auth = true, retry = true } = opts;
+export async function apiFetch<T>(
+  path: string,
+  opts: FetchOpts = {},
+): Promise<T> {
+  const {
+    method = "GET",
+    body,
+    headers = {},
+    auth = true,
+    retry = true,
+  } = opts;
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
 
-  const page = typeof window !== "undefined" ? window.location.pathname : undefined;
+  const page =
+    typeof window !== "undefined" ? window.location.pathname : undefined;
 
   let res: Response;
   try {
@@ -155,11 +182,20 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
       method,
       credentials: "include",
       headers: {
-        ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
-        ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(body !== undefined && !isForm
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...(auth && accessToken
+          ? { Authorization: `Bearer ${accessToken}` }
+          : {}),
         ...headers,
       },
-      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : isForm
+            ? (body as FormData)
+            : JSON.stringify(body),
     });
   } catch (networkErr) {
     // Sem resposta alguma (DNS, conexão recusada, CORS, offline). Registra e converte
@@ -168,10 +204,14 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
       status: 0,
       url: path,
       method,
-      message: networkErr instanceof Error ? networkErr.message : "Falha de rede",
+      message:
+        networkErr instanceof Error ? networkErr.message : "Falha de rede",
       page,
     });
-    throw new ApiError(0, "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.");
+    throw new ApiError(
+      0,
+      "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.",
+    );
   }
 
   if (res.status === 401 && retry && auth) {
@@ -191,7 +231,10 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
       data = null;
     }
   }
-  const asObj = data as { message?: string; issues?: { path: string; message: string }[] } | null;
+  const asObj = data as {
+    message?: string;
+    issues?: { path: string; message: string }[];
+  } | null;
 
   // Cabeçalhos de rastreio do CDN/WAF/gateway — ouro para a infra localizar a requisição.
   const h = (n: string) => res.headers.get(n) ?? undefined;
@@ -203,11 +246,14 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
   };
 
   if (!res.ok) {
-    const message = asObj?.message || `Falha na requisição (HTTP ${res.status}).`;
+    const message =
+      asObj?.message || `Falha na requisição (HTTP ${res.status}).`;
     // Reporta falhas inesperadas. Ignora o 401 (desafio de refresh, rotineiro) e a
     // validação de campo 400 com issues (erro normal, corrigido pelo usuário no form).
     const isFieldValidation =
-      res.status === 400 && Array.isArray(asObj?.issues) && (asObj!.issues!.length ?? 0) > 0;
+      res.status === 400 &&
+      Array.isArray(asObj?.issues) &&
+      (asObj!.issues!.length ?? 0) > 0;
     if (res.status !== 401 && !isFieldValidation) {
       reportClientError({
         status: res.status,
@@ -241,43 +287,95 @@ export async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T
 export const authApi = {
   /** Situação pública do período de cadastro (habilita/bloqueia o botão de cadastro). */
   registrationStatus: () =>
-    apiFetch<RegistrationStatusDto>("/account/registration-status", { auth: false, retry: false }),
-  login: (cpf: string, password: string) =>
-    apiFetch<AuthResponse>("/auth/login", { method: "POST", body: { cpf, password }, auth: false, retry: false }),
-  refresh: () => apiFetch<AuthResponse>("/auth/refresh", { method: "POST", auth: false, retry: false }),
-  logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST", auth: false, retry: false }),
-  me: () => apiFetch<SessionUser & { emailVerified: boolean }>("/auth/me"),
-  start: (email: string) =>
-    apiFetch<{ message: string }>("/account/start", { method: "POST", body: { email }, auth: false, retry: false }),
-  resend: (email: string) =>
-    apiFetch<{ message: string }>("/account/resend-token", { method: "POST", body: { email }, auth: false, retry: false }),
-  forgotPassword: (cpf: string) =>
-    apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", body: { cpf }, auth: false, retry: false }),
-  resetPassword: (cpf: string, code: string, password: string) =>
-    apiFetch<{ message: string }>("/auth/reset-password", { method: "POST", body: { cpf, code, password }, auth: false, retry: false }),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    apiFetch<{ message: string }>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } }),
-  resetCandidatePassword: (candidateId: string, password: string) =>
-    apiFetch<{ message: string }>(`/auth/candidates/${candidateId}/password`, { method: "POST", body: { password } }),
-  impersonate: (candidateId: string) =>
-    apiFetch<AuthResponse>(`/auth/impersonation/${candidateId}/start`, { method: "POST" }),
-  stopImpersonation: () =>
-    apiFetch<AuthResponse>("/auth/impersonation/stop", { method: "POST" }),
-  verifyToken: (email: string, code: string) =>
-    apiFetch<{ registrationToken: string; email: string }>("/account/verify-token", {
-      method: "POST",
-      body: { email, code },
+    apiFetch<RegistrationStatusDto>("/account/registration-status", {
       auth: false,
       retry: false,
     }),
-  /** DEV ONLY — token de registro sem código (servidor só aceita com DEV_AUTH_BYPASS). */
-  devToken: (email: string) =>
-    apiFetch<{ registrationToken: string; email: string }>("/account/dev-token", {
+  login: (cpf: string, password: string) =>
+    apiFetch<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: { cpf, password },
+      auth: false,
+      retry: false,
+    }),
+  refresh: () =>
+    apiFetch<AuthResponse>("/auth/refresh", {
+      method: "POST",
+      auth: false,
+      retry: false,
+    }),
+  logout: () =>
+    apiFetch<{ ok: boolean }>("/auth/logout", {
+      method: "POST",
+      auth: false,
+      retry: false,
+    }),
+  me: () => apiFetch<SessionUser & { emailVerified: boolean }>("/auth/me"),
+  start: (email: string) =>
+    apiFetch<{ message: string }>("/account/start", {
       method: "POST",
       body: { email },
       auth: false,
       retry: false,
     }),
+  resend: (email: string) =>
+    apiFetch<{ message: string }>("/account/resend-token", {
+      method: "POST",
+      body: { email },
+      auth: false,
+      retry: false,
+    }),
+  forgotPassword: (cpf: string) =>
+    apiFetch<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: { cpf },
+      auth: false,
+      retry: false,
+    }),
+  resetPassword: (cpf: string, code: string, password: string) =>
+    apiFetch<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: { cpf, code, password },
+      auth: false,
+      retry: false,
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiFetch<{ message: string }>("/auth/change-password", {
+      method: "POST",
+      body: { currentPassword, newPassword },
+    }),
+  resetCandidatePassword: (candidateId: string, password: string) =>
+    apiFetch<{ message: string }>(`/auth/candidates/${candidateId}/password`, {
+      method: "POST",
+      body: { password },
+    }),
+  impersonate: (candidateId: string) =>
+    apiFetch<AuthResponse>(`/auth/impersonation/${candidateId}/start`, {
+      method: "POST",
+    }),
+  stopImpersonation: () =>
+    apiFetch<AuthResponse>("/auth/impersonation/stop", { method: "POST" }),
+  verifyToken: (email: string, code: string) =>
+    apiFetch<{ registrationToken: string; email: string }>(
+      "/account/verify-token",
+      {
+        method: "POST",
+        body: { email, code },
+        auth: false,
+        retry: false,
+      },
+    ),
+  /** DEV ONLY — token de registro sem código (servidor só aceita com DEV_AUTH_BYPASS). */
+  devToken: (email: string) =>
+    apiFetch<{ registrationToken: string; email: string }>(
+      "/account/dev-token",
+      {
+        method: "POST",
+        body: { email },
+        auth: false,
+        retry: false,
+      },
+    ),
   register: (registrationToken: string, body: Record<string, unknown>) =>
     apiFetch<AuthResponse>("/account/register", {
       method: "POST",
@@ -290,74 +388,168 @@ export const authApi = {
 
 /** Catálogo do ciclo ativo (público). */
 export const cyclesApi = {
-  active: () => apiFetch<CycleDto>("/cycles/active", { auth: false, retry: false }),
+  list: () => apiFetch<CycleDto[]>("/cycles", { auth: false, retry: false }),
+  active: () =>
+    apiFetch<CycleDto>("/cycles/active", { auth: false, retry: false }),
   /** Matriz documental completa vigente, agrupada por categoria. */
   documentTypes: () =>
-    apiFetch<{ categories: DocumentCategoryDto[] }>("/cycles/active/document-types", { auth: false, retry: false }),
+    apiFetch<{ categories: DocumentCategoryDto[] }>(
+      "/cycles/active/document-types",
+      { auth: false, retry: false },
+    ),
 };
 
 /** Cursos e campi (público). */
 export const coursesApi = {
-  campuses: () => apiFetch<CampusDto[]>("/campuses", { auth: false, retry: false }),
+  campuses: () =>
+    apiFetch<CampusDto[]>("/campuses", { auth: false, retry: false }),
   courses: (campus?: string) =>
-    apiFetch<CourseDto[]>(`/courses${campus ? `?campus=${encodeURIComponent(campus)}` : ""}`, { auth: false, retry: false }),
+    apiFetch<CourseDto[]>(
+      `/courses${campus ? `?campus=${encodeURIComponent(campus)}` : ""}`,
+      { auth: false, retry: false },
+    ),
 };
 
 /** Inscrição do candidato autenticado. */
 export const applicationsApi = {
+  list: () => apiFetch<ApplicationDto[]>("/applications"),
+  get: (id: string) => apiFetch<ApplicationDto>(`/applications/${id}`),
   me: () => apiFetch<ApplicationDto>("/applications/me"),
-  events: (id: string) => apiFetch<ApplicationEventDto[]>(`/applications/${id}/events`),
+  events: (id: string) =>
+    apiFetch<ApplicationEventDto[]>(`/applications/${id}/events`),
   /** Lista exata de documentos exigidos, resolvida a partir dos dados da inscrição. */
-  requiredDocuments: (id: string) => apiFetch<RequiredDocumentsDto>(`/applications/${id}/required-documents`),
+  requiredDocuments: (id: string) =>
+    apiFetch<RequiredDocumentsDto>(`/applications/${id}/required-documents`),
   enem: (id: string, body: { edition: number; registration: string }) =>
-    apiFetch<ApplicationDto>(`/applications/${id}/enem`, { method: "PATCH", body }),
+    apiFetch<ApplicationDto>(`/applications/${id}/enem`, {
+      method: "PATCH",
+      body,
+    }),
   course: (id: string, body: { courseId: string }) =>
-    apiFetch<ApplicationDto>(`/applications/${id}/course`, { method: "PATCH", body }),
+    apiFetch<ApplicationDto>(`/applications/${id}/course`, {
+      method: "PATCH",
+      body,
+    }),
+  declarations: (id: string, body: ApplicationDeclarationsInput) =>
+    apiFetch<ApplicationDto>(`/applications/${id}/declarations`, {
+      method: "PATCH",
+      body,
+    }),
   /** Finaliza a inscrição (marca ENVIADA e trava novos envios). */
   finalize: (id: string) =>
-    apiFetch<ApplicationDto>(`/applications/${id}/finalize`, { method: "POST" }),
+    apiFetch<ApplicationDto>(`/applications/${id}/finalize`, {
+      method: "POST",
+    }),
+};
+
+/** Oportunidades de inscrição vinculadas ao CPF do candidato autenticado. */
+export const opportunitiesApi = {
+  listMine: () => apiFetch<OpportunityDto[]>("/opportunities/me"),
+  claim: (id: string) =>
+    apiFetch<OpportunityClaimResult>(`/opportunities/${id}/claim`, {
+      method: "POST",
+    }),
+};
+
+/** Solicitações estruturadas de correção da inscrição do candidato. */
+export const pendingRequestsApi = {
+  list: (applicationId: string) =>
+    apiFetch<PendingRequestDto[]>(
+      `/applications/${applicationId}/pending-requests`,
+    ),
+  submit: (applicationId: string, requestId: string) =>
+    apiFetch<PendingRequestDto>(
+      `/applications/${applicationId}/pending-requests/${requestId}/submit`,
+      { method: "POST" },
+    ),
 };
 
 /** Grupo familiar da inscrição. */
 export const familyApi = {
-  list: (appId: string) => apiFetch<FamilyMemberDto[]>(`/applications/${appId}/family`),
+  list: (appId: string) =>
+    apiFetch<FamilyMemberDto[]>(`/applications/${appId}/family`),
   create: (appId: string, body: FamilyMemberInput) =>
-    apiFetch<FamilyMemberDto>(`/applications/${appId}/family`, { method: "POST", body }),
+    apiFetch<FamilyMemberDto>(`/applications/${appId}/family`, {
+      method: "POST",
+      body,
+    }),
   update: (memberId: string, body: Partial<FamilyMemberInput>) =>
     apiFetch<FamilyMemberDto>(`/family/${memberId}`, { method: "PATCH", body }),
-  remove: (memberId: string) => apiFetch<void>(`/family/${memberId}`, { method: "DELETE" }),
+  remove: (memberId: string) =>
+    apiFetch<void>(`/family/${memberId}`, { method: "DELETE" }),
 };
 
 /** Documentos comprobatórios — status e envio de arquivo (multipart). */
 export const documentsApi = {
-  list: (appId: string) => apiFetch<UploadedDocumentDto[]>(`/applications/${appId}/documents`),
-  upload: (appId: string, typeId: string, memberId: string | null, file: File) => {
+  list: (appId: string) =>
+    apiFetch<UploadedDocumentDto[]>(`/applications/${appId}/documents`),
+  upload: (
+    appId: string,
+    typeId: string,
+    memberId: string | null,
+    file: File,
+  ) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("typeId", typeId);
     if (memberId) fd.append("memberId", memberId);
-    return apiFetch<UploadedDocumentDto>(`/applications/${appId}/documents`, { method: "POST", body: fd });
+    return apiFetch<UploadedDocumentDto>(`/applications/${appId}/documents`, {
+      method: "POST",
+      body: fd,
+    });
   },
 };
 
 /** Área administrativa (equipe). Somente leitura na Fase 1. */
 export const adminApi = {
-  applications: (params: { q?: string; status?: string; call?: string } = {}) => {
+  applications: (
+    params: {
+      q?: string;
+      status?: string;
+      call?: string;
+      cycleId?: string;
+      callId?: string;
+    } = {},
+  ) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
-    if (params.status && params.status !== "all") qs.set("status", params.status);
+    if (params.status && params.status !== "all")
+      qs.set("status", params.status);
     if (params.call && params.call !== "all") qs.set("call", params.call);
+    if (params.cycleId) qs.set("cycleId", params.cycleId);
+    if (params.callId && params.callId !== "all")
+      qs.set("callId", params.callId);
     const s = qs.toString();
-    return apiFetch<AdminApplicationRow[]>(`/admin/applications${s ? `?${s}` : ""}`);
+    return apiFetch<AdminApplicationRow[]>(
+      `/admin/applications${s ? `?${s}` : ""}`,
+    );
   },
-  application: (id: string) => apiFetch<AdminApplicationDetail>(`/admin/applications/${id}`),
-  socioForm: (id: string) => apiFetch<SocioFormDto | null>(`/admin/applications/${id}/socio-form`),
+  application: (id: string) =>
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${id}`),
+  socioForm: (id: string) =>
+    apiFetch<SocioFormDto | null>(`/admin/applications/${id}/socio-form`),
   analysts: () => apiFetch<AdminAnalystDto[]>("/admin/analysts"),
-  stats: () => apiFetch<AdminStatsDto>("/admin/stats"),
-  /** Trilha de auditoria (Auditoria → Logs). Restrito a ADMIN no servidor. */
-  logs: (params: { action?: string; q?: string; from?: string; to?: string; take?: number } = {}) => {
+  stats: (params: { cycleId?: string; callId?: string } = {}) => {
     const qs = new URLSearchParams();
-    if (params.action && params.action !== "all") qs.set("action", params.action);
+    if (params.cycleId) qs.set("cycleId", params.cycleId);
+    if (params.callId && params.callId !== "all")
+      qs.set("callId", params.callId);
+    const s = qs.toString();
+    return apiFetch<AdminStatsDto>(`/admin/stats${s ? `?${s}` : ""}`);
+  },
+  /** Trilha de auditoria (Auditoria → Logs). Restrito a ADMIN no servidor. */
+  logs: (
+    params: {
+      action?: string;
+      q?: string;
+      from?: string;
+      to?: string;
+      take?: number;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.action && params.action !== "all")
+      qs.set("action", params.action);
     if (params.q) qs.set("q", params.q);
     if (params.from) qs.set("from", params.from);
     if (params.to) qs.set("to", params.to);
@@ -366,18 +558,49 @@ export const adminApi = {
     return apiFetch<AuditLogDto[]>(`/admin/logs${s ? `?${s}` : ""}`);
   },
   reviewDocument: (documentId: string, body: AdminDocumentReviewInput) =>
-    apiFetch<AdminApplicationDetail>(`/admin/documents/${documentId}/review`, { method: "POST", body }),
+    apiFetch<AdminApplicationDetail>(`/admin/documents/${documentId}/review`, {
+      method: "POST",
+      body,
+    }),
   assignAnalyst: (appId: string, analystId: string | null) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/analyst`, { method: "PATCH", body: { analystId } }),
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/analyst`, {
+      method: "PATCH",
+      body: { analystId },
+    }),
   startAnalysis: (appId: string) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/start-analysis`, { method: "POST" }),
+    apiFetch<AdminApplicationDetail>(
+      `/admin/applications/${appId}/start-analysis`,
+      { method: "POST" },
+    ),
   decide: (appId: string, body: AdminDecisionInput) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/decision`, { method: "POST", body }),
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/decision`, {
+      method: "POST",
+      body,
+    }),
+  extendPending: (
+    appId: string,
+    requestId: string,
+    body: PendingExtensionInput,
+  ) =>
+    apiFetch<PendingRequestDto>(
+      `/admin/applications/${appId}/pending-requests/${requestId}/extend`,
+      { method: "PATCH", body },
+    ),
+  reopenPending: (appId: string, body: PendingRequestInput) =>
+    apiFetch<PendingRequestDto>(
+      `/admin/applications/${appId}/pending-requests/reopen`,
+      { method: "POST", body },
+    ),
   setIncome: (appId: string, body: AdminIncomeInput) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/income`, { method: "PATCH", body }),
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/income`, {
+      method: "PATCH",
+      body,
+    }),
   /** Exporta a inscrição (classificado) para o TOTVS RM e devolve o detalhe atualizado. */
   exportToRm: (appId: string) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, { method: "POST" }),
+    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export`, {
+      method: "POST",
+    }),
   /** Exporta uma seleção de candidatos classificados ao TOTVS RM. */
   exportManyToRm: (applicationIds: string[]) =>
     apiFetch<RmBulkExportResult>("/admin/applications/rm-export", {
@@ -386,17 +609,31 @@ export const adminApi = {
     }),
   /** Reverte a exportação (corretivo, ADMIN): limpa o vínculo com o RM e volta o status. */
   revertRm: (appId: string) =>
-    apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/rm-export/revert`, { method: "POST" }),
+    apiFetch<AdminApplicationDetail>(
+      `/admin/applications/${appId}/rm-export/revert`,
+      { method: "POST" },
+    ),
   /** Diagnóstico read-only: o backend alcança o RM? (confirma a rota AWS→RM). */
   pingRm: () =>
-    apiFetch<{ target: string; ok: boolean; httpStatus?: number; ms: number; error?: string }>("/admin/rm/ping"),
+    apiFetch<{
+      target: string;
+      ok: boolean;
+      httpStatus?: number;
+      ms: number;
+      error?: string;
+    }>("/admin/rm/ping"),
   /** Baixa o arquivo do documento (com Bearer) e devolve um object URL + mime para exibir inline. */
-  documentFile: async (documentId: string): Promise<{ url: string; mime: string }> => {
+  documentFile: async (
+    documentId: string,
+  ): Promise<{ url: string; mime: string }> => {
     const res = await fetch(`${API_BASE}/admin/documents/${documentId}/file`, {
       credentials: "include",
-      headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
     });
-    if (!res.ok) throw new ApiError(res.status, "Não foi possível abrir o arquivo.");
+    if (!res.ok)
+      throw new ApiError(res.status, "Não foi possível abrir o arquivo.");
     const blob = await res.blob();
     return { url: URL.createObjectURL(blob), mime: blob.type };
   },
@@ -404,35 +641,59 @@ export const adminApi = {
 
 /** Pré-selecionados (Configurações): CRUD + importação CSV/Excel. */
 export const preselectionApi = {
-  list: (q?: string, call?: string) => {
+  list: (q?: string, call?: string, cycleId?: string, callId?: string) => {
     const qs = new URLSearchParams();
     if (q) qs.set("q", q);
     if (call && call !== "all") qs.set("call", call);
+    if (cycleId) qs.set("cycleId", cycleId);
+    if (callId && callId !== "all") qs.set("callId", callId);
     const s = qs.toString();
-    return apiFetch<PreselectionEntryDto[]>(`/admin/preselection${s ? `?${s}` : ""}`);
+    return apiFetch<PreselectionEntryDto[]>(
+      `/admin/preselection${s ? `?${s}` : ""}`,
+    );
   },
   create: (body: PreselectionInput) =>
-    apiFetch<PreselectionEntryDto>("/admin/preselection", { method: "POST", body }),
+    apiFetch<PreselectionEntryDto>("/admin/preselection", {
+      method: "POST",
+      body,
+    }),
   update: (id: string, body: PreselectionInput) =>
-    apiFetch<PreselectionEntryDto>(`/admin/preselection/${id}`, { method: "PATCH", body }),
-  remove: (id: string) =>
-    apiFetch<{ ok: true }>(`/admin/preselection/${id}`, { method: "DELETE" }),
-  import: (file: File, call: string) => {
+    apiFetch<PreselectionEntryDto>(`/admin/preselection/${id}`, {
+      method: "PATCH",
+      body,
+    }),
+  remove: (id: string, reason?: string) =>
+    apiFetch<{ ok: true }>(`/admin/preselection/${id}`, {
+      method: "DELETE",
+      body: reason ? { reason } : undefined,
+    }),
+  import: (file: File, call?: string, callId?: string) => {
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("call", call);
-    return apiFetch<PreselectionImportResult>("/admin/preselection/import", { method: "POST", body: fd });
+    if (call) fd.append("call", call);
+    if (callId) fd.append("callId", callId);
+    return apiFetch<PreselectionImportResult>("/admin/preselection/import", {
+      method: "POST",
+      body: fd,
+    });
   },
 };
 
 /** Usuários internos (Configurações → Usuários): CRUD restrito a ADMIN. */
 export const usersApi = {
   list: (q?: string) =>
-    apiFetch<UserDto[]>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    apiFetch<UserDto[]>(
+      `/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
   create: (body: UserCreateInput) =>
     apiFetch<UserDto>("/admin/users", { method: "POST", body }),
   update: (id: string, body: UserUpdateInput) =>
     apiFetch<UserDto>(`/admin/users/${id}`, { method: "PATCH", body }),
+  updatePermissions: (id: string, body: UserPermissionsInput) =>
+    apiFetch<UserDto>(`/admin/users/${id}/permissions`, {
+      method: "PATCH",
+      body,
+    }),
 };
 
 /**
@@ -445,32 +706,63 @@ export const catalogApi = {
   campuses: () => apiFetch<CampusDto[]>("/admin/catalog/campuses"),
   courses: () => apiFetch<CatalogCourseDto[]>("/admin/catalog/courses"),
   createCourse: (body: CourseUpsertInput) =>
-    apiFetch<CatalogCourseDto>("/admin/catalog/courses", { method: "POST", body }),
+    apiFetch<CatalogCourseDto>("/admin/catalog/courses", {
+      method: "POST",
+      body,
+    }),
   updateCourse: (id: string, body: CourseUpsertInput) =>
-    apiFetch<CatalogCourseDto>(`/admin/catalog/courses/${id}`, { method: "PATCH", body }),
+    apiFetch<CatalogCourseDto>(`/admin/catalog/courses/${id}`, {
+      method: "PATCH",
+      body,
+    }),
   deleteCourse: (id: string) =>
-    apiFetch<{ deleted: boolean }>(`/admin/catalog/courses/${id}`, { method: "DELETE" }),
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/courses/${id}`, {
+      method: "DELETE",
+    }),
 
   // Documentos
-  docCatalog: () => apiFetch<CatalogCategoryDto[]>("/admin/catalog/doc-catalog"),
+  docCatalog: () =>
+    apiFetch<CatalogCategoryDto[]>("/admin/catalog/doc-catalog"),
   createCategory: (body: DocCategoryUpsertInput) =>
-    apiFetch<CatalogCategoryDto>("/admin/catalog/categories", { method: "POST", body }),
+    apiFetch<CatalogCategoryDto>("/admin/catalog/categories", {
+      method: "POST",
+      body,
+    }),
   updateCategory: (id: string, body: DocCategoryUpsertInput) =>
-    apiFetch<CatalogCategoryDto>(`/admin/catalog/categories/${id}`, { method: "PATCH", body }),
+    apiFetch<CatalogCategoryDto>(`/admin/catalog/categories/${id}`, {
+      method: "PATCH",
+      body,
+    }),
   deleteCategory: (id: string) =>
-    apiFetch<{ deleted: boolean }>(`/admin/catalog/categories/${id}`, { method: "DELETE" }),
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/categories/${id}`, {
+      method: "DELETE",
+    }),
   createDocType: (body: DocTypeUpsertInput) =>
-    apiFetch<CatalogDocTypeDto>("/admin/catalog/doc-types", { method: "POST", body }),
+    apiFetch<CatalogDocTypeDto>("/admin/catalog/doc-types", {
+      method: "POST",
+      body,
+    }),
   updateDocType: (id: string, body: DocTypeUpsertInput) =>
-    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}`, { method: "PATCH", body }),
+    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}`, {
+      method: "PATCH",
+      body,
+    }),
   setDocTypeActive: (id: string, active: boolean) =>
-    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}/active`, { method: "PATCH", body: { active } }),
+    apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}/active`, {
+      method: "PATCH",
+      body: { active },
+    }),
   deleteDocType: (id: string) =>
-    apiFetch<{ deleted: boolean }>(`/admin/catalog/doc-types/${id}`, { method: "DELETE" }),
+    apiFetch<{ deleted: boolean }>(`/admin/catalog/doc-types/${id}`, {
+      method: "DELETE",
+    }),
   uploadTemplate: (id: string, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return apiFetch<CatalogDocTypeDto>(`/admin/catalog/doc-types/${id}/template`, { method: "POST", body: fd });
+    return apiFetch<CatalogDocTypeDto>(
+      `/admin/catalog/doc-types/${id}/template`,
+      { method: "POST", body: fd },
+    );
   },
 };
 
@@ -478,11 +770,18 @@ export const catalogApi = {
 export const maintenanceApi = {
   summary: () => apiFetch<MaintenanceSummaryDto>("/admin/maintenance/summary"),
   reset: (confirmation: string) =>
-    apiFetch<MaintenanceResetResult>("/admin/maintenance/reset", { method: "POST", body: { confirmation } }),
+    apiFetch<MaintenanceResetResult>("/admin/maintenance/reset", {
+      method: "POST",
+      body: { confirmation },
+    }),
   syncDocMatrix: () =>
-    apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", { method: "POST" }),
+    apiFetch<DocMatrixSyncResult>("/admin/maintenance/sync-doc-matrix", {
+      method: "POST",
+    }),
   syncCourses: () =>
-    apiFetch<CourseSyncResult>("/admin/maintenance/sync-courses", { method: "POST" }),
+    apiFetch<CourseSyncResult>("/admin/maintenance/sync-courses", {
+      method: "POST",
+    }),
 };
 
 /** Parâmetros globais do sistema (Configurações → Parâmetros do sistema). Restrito a ADMIN. */
@@ -492,11 +791,47 @@ export const settingsApi = {
     apiFetch<SystemSettingsDto>("/admin/settings", { method: "PUT", body }),
 };
 
+/** Chamadas e revisões de cronograma (Configurações → Cronograma e prazos). */
+export const selectionCallsApi = {
+  list: (cycleId?: string) =>
+    apiFetch<SelectionCallSummaryDto[]>(
+      `/admin/selection-calls${cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : ""}`,
+    ),
+  get: (id: string) =>
+    apiFetch<SelectionCallDto>(`/admin/selection-calls/${id}`),
+  create: (body: SelectionCallInput) =>
+    apiFetch<SelectionCallDto>("/admin/selection-calls", {
+      method: "POST",
+      body,
+    }),
+  update: (id: string, body: SelectionCallInput) =>
+    apiFetch<SelectionCallDto>(`/admin/selection-calls/${id}`, {
+      method: "PATCH",
+      body,
+    }),
+  saveDraft: (id: string, body: CallScheduleInput) =>
+    apiFetch<SelectionCallDto>(`/admin/selection-calls/${id}/schedule/draft`, {
+      method: "PUT",
+      body,
+    }),
+  publish: (id: string) =>
+    apiFetch<SelectionCallDto>(
+      `/admin/selection-calls/${id}/schedule/publish`,
+      { method: "POST" },
+    ),
+};
+
 /** Ficha socioeconômica (autosave por seção + envio). */
 export const socioApi = {
-  get: (appId: string) => apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`),
+  get: (appId: string) =>
+    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`),
   patch: (appId: string, body: SocioFormInput) =>
-    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`, { method: "PATCH", body }),
+    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form`, {
+      method: "PATCH",
+      body,
+    }),
   submit: (appId: string) =>
-    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form/submit`, { method: "POST" }),
+    apiFetch<SocioFormDto>(`/applications/${appId}/socio-form/submit`, {
+      method: "POST",
+    }),
 };

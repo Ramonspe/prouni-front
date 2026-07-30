@@ -1,9 +1,11 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import { ProcessContextSelector } from "@/components/process-context-selector";
 import { Avatar } from "@/components/ui";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
+import { useAdminProcessContext } from "@/lib/use-admin-process-context";
 import { STATUS_MAP, type ProcessStatus } from "@prouni/shared";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -34,7 +36,21 @@ function Bars({ rows, color = "var(--blue-600)" }: { rows: { label: string; coun
 
 export default function IndicadoresPage() {
   const { user } = useRequireStaff();
-  const stats = useQuery({ queryKey: ["admin", "stats"], queryFn: () => adminApi.stats(), enabled: !!user });
+  const processContext = useAdminProcessContext(Boolean(user));
+  const stats = useQuery({
+    queryKey: [
+      "admin",
+      "stats",
+      processContext.cycleId,
+      processContext.callId,
+    ],
+    queryFn: () =>
+      adminApi.stats({
+        cycleId: processContext.cycleId,
+        callId: processContext.callId,
+      }),
+    enabled: Boolean(user && processContext.cycleId),
+  });
   const d = stats.data;
 
   return (
@@ -42,10 +58,23 @@ export default function IndicadoresPage() {
       <div className="content fade-in">
         <div style={{ marginBottom: 18 }}>
           <h1 className="page-title">Indicadores</h1>
-          <p className="page-subtitle">Métricas operacionais do processo PROUNI · ciclo ativo.</p>
+          <p className="page-subtitle">Métricas operacionais do processo e da chamada selecionados.</p>
         </div>
 
-        {stats.isLoading || !user ? (
+        {processContext.cycleOptions.length > 0 && (
+          <ProcessContextSelector
+            cycles={processContext.cycleOptions}
+            calls={processContext.callOptions}
+            cycleId={processContext.cycleId}
+            callId={processContext.callId}
+            onCycleChange={processContext.setCycleId}
+            onCallChange={processContext.setCallId}
+            disabled={processContext.isLoading}
+            helperText="Todos os indicadores abaixo são recalculados para este contexto."
+          />
+        )}
+
+        {stats.isLoading || processContext.isLoading || !user ? (
           <div className="card card-pad muted">Calculando indicadores…</div>
         ) : stats.isError || !d ? (
           <div className="card card-pad muted">Não foi possível carregar os indicadores.</div>
@@ -55,7 +84,7 @@ export default function IndicadoresPage() {
               <div className="stat">
                 <div className="stat-label">Total de inscrições</div>
                 <div className="stat-value">{d.totalApplications}</div>
-                <div className="stat-trend flat">Ciclo ativo</div>
+                <div className="stat-trend flat">Contexto selecionado</div>
               </div>
               <div className="stat">
                 <div className="stat-label">Ficha preenchida</div>

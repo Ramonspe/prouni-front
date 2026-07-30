@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import { ApplicationContextHeader } from "@/components/application-context-header";
 import {
   Avatar,
   Badge,
@@ -17,6 +18,7 @@ import {
   IconAlert,
   IconCheck,
   IconChevL,
+  IconClock,
   IconDownload,
   IconExternal,
   IconEye,
@@ -28,11 +30,16 @@ import {
 } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
+import { composeBrasiliaInstant, formatBrasiliaDateTime } from "@/lib/brasilia-time";
 import {
   DECISION_REASONS,
+  PRESELECTION_CALLS,
+  STATUS_MAP,
   type AdminDecisionInput,
   type AdminDocumentDto,
   type DocumentStatusDb,
+  type PendingFormSection,
+  type PendingRequestInput,
   type ProcessStatus,
 } from "@prouni/shared";
 
@@ -126,6 +133,19 @@ const PROFILE: Record<string, { tone: "success" | "warning"; label: string }> =
     INTEGRAL: { tone: "success", label: "Integral elegível" },
     PARCIAL: { tone: "warning", label: "Parcial elegível" },
   };
+const PENDING_FORM_SECTIONS: {
+  value: PendingFormSection;
+  label: string;
+}[] = [
+  { value: "STUDENT", label: "Dados do estudante" },
+  { value: "FAMILY", label: "Grupo familiar" },
+  { value: "HOUSING", label: "Moradia" },
+  { value: "OTHER", label: "Rendas, despesas e bens" },
+];
+
+function documentPendingKey(document: AdminDocumentDto): string {
+  return `${document.documentTypeId}:${document.familyMemberId ?? "application"}`;
+}
 
 export default function AnalysisPage() {
   const { user } = useRequireStaff();
@@ -160,6 +180,20 @@ export default function AnalysisPage() {
   );
   const [kind, setKind] = useState<"INTEGRAL" | "PARCIAL" | "">("");
   const [reason, setReason] = useState("");
+  const [pendingDocumentKeys, setPendingDocumentKeys] = useState<string[]>([]);
+  const [pendingSections, setPendingSections] = useState<
+    PendingFormSection[]
+  >([]);
+  const [pendingDueDate, setPendingDueDate] = useState("");
+  const [pendingDueTime, setPendingDueTime] = useState("");
+  const [extensionDueDate, setExtensionDueDate] = useState("");
+  const [extensionDueTime, setExtensionDueTime] = useState("");
+  const [extensionReason, setExtensionReason] = useState("");
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopenDocumentKeys, setReopenDocumentKeys] = useState<string[]>([]);
+  const [reopenSections, setReopenSections] = useState<PendingFormSection[]>([]);
+  const [reopenDueDate, setReopenDueDate] = useState("");
+  const [reopenDueTime, setReopenDueTime] = useState("");
   const [viewer, setViewer] = useState<{
     documentId: string;
     url: string;
@@ -218,11 +252,44 @@ export default function AnalysisPage() {
       setDecision("");
       setKind("");
       setReason("");
+      setPendingDocumentKeys([]);
+      setPendingSections([]);
+      setPendingDueDate("");
+      setPendingDueTime("");
     },
   });
   const startMut = useMutation({
     mutationFn: () => adminApi.startAnalysis(params.id),
     onSuccess: invalidate,
+  });
+  const extendPendingMut = useMutation({
+    mutationFn: (input: {
+      requestId: string;
+      dueAt: string;
+      reason: string;
+    }) =>
+      adminApi.extendPending(params.id, input.requestId, {
+        dueAt: input.dueAt,
+        reason: input.reason,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setExtensionDueDate("");
+      setExtensionDueTime("");
+      setExtensionReason("");
+    },
+  });
+  const reopenPendingMut = useMutation({
+    mutationFn: (input: PendingRequestInput) =>
+      adminApi.reopenPending(params.id, input),
+    onSuccess: () => {
+      invalidate();
+      setReopenReason("");
+      setReopenDocumentKeys([]);
+      setReopenSections([]);
+      setReopenDueDate("");
+      setReopenDueTime("");
+    },
   });
   const exportRmMut = useMutation({
     mutationFn: () => adminApi.exportToRm(params.id),
@@ -299,7 +366,12 @@ export default function AnalysisPage() {
 
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
   const busy =
-    reviewMut.isPending || decideMut.isPending || assignMut.isPending || startMut.isPending;
+    reviewMut.isPending ||
+    decideMut.isPending ||
+    assignMut.isPending ||
+    startMut.isPending ||
+    extendPendingMut.isPending ||
+    reopenPendingMut.isPending;
   const canRefresh = user.role === "ADMIN" || user.role === "ANALYST";
   const reviewableStatus = [
     "analise_doc",
@@ -312,6 +384,8 @@ export default function AnalysisPage() {
     d.status === "enviada" && assignedAnalystId === user.id;
   const canPerformAnalystActions =
     reviewableStatus && assignedAnalystId === user.id;
+  const canManagePending =
+    user.role === "ADMIN" || assignedAnalystId === user.id;
   const reviewBlockedMessage = !assignedAnalystId
       ? "Atribua um analista responsável antes de aprovar ou reprovar documentos."
       : d.status === "enviada"
@@ -342,6 +416,26 @@ export default function AnalysisPage() {
         .join("\n") +
       `\n\nValor automático (declarada + outras): ${fmtMoney(d.summary.totalIncome)}`
     : "";
+  const rejectedDocuments = d.documents.filter(
+    (document) => document.status === "REPROVADO",
+  );
+  const selectedPendingDocuments = rejectedDocuments.filter((document) =>
+    pendingDocumentKeys.includes(documentPendingKey(document)),
+  );
+  const selectedReopenDocuments = rejectedDocuments.filter((document) =>
+    reopenDocumentKeys.includes(documentPendingKey(document)),
+  );
+  const pendingItemsCount =
+    selectedPendingDocuments.length + pendingSections.length;
+  const pendingDeadlineComplete =
+    (!pendingDueDate && !pendingDueTime) ||
+    Boolean(pendingDueDate && pendingDueTime);
+  const reopenItemsCount =
+    selectedReopenDocuments.length + reopenSections.length;
+  const callLabel =
+    d.selectionCall?.name ??
+    PRESELECTION_CALLS.find((call) => call.value === d.call)?.label ??
+    d.call;
 
   return (
     <AppShell
@@ -352,6 +446,19 @@ export default function AnalysisPage() {
         className="content fade-in"
         style={{ maxWidth: "none", padding: 22 }}
       >
+        <div style={{ marginBottom: 16 }}>
+          <ApplicationContextHeader
+            eyebrow="Inscrição em análise"
+            title={d.name}
+            cycleLabel={d.cycle.label}
+            callLabel={callLabel}
+            courseName={d.course}
+            campusName={d.campus}
+            protocol={d.protocol}
+            statusLabel={STATUS_MAP[d.status].label}
+          />
+        </div>
+
         {/* Cabeçalho */}
         <div className="card card-pad" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -414,6 +521,300 @@ export default function AnalysisPage() {
             />
           </div>
         </div>
+
+        {d.openPendingRequest && (
+          <div className="card card-pad" style={{ marginBottom: 16 }}>
+            <Banner tone="warn" title="Pendência aberta para esta inscrição">
+              Prazo até{" "}
+              <strong>
+                {formatBrasiliaDateTime(d.openPendingRequest.dueAt, {
+                  includeTimeZone: true,
+                })}
+              </strong>
+              . Itens solicitados:{" "}
+              {d.openPendingRequest.items
+                .map((item) => item.label)
+                .join("; ")}
+              .
+            </Banner>
+            <div style={{ marginTop: 14 }}>
+              <h3 className="h-card-title">Prorrogar prazo da pendência</h3>
+              <p className="muted small" style={{ margin: "5px 0 10px" }}>
+                A prorrogação mantém os mesmos itens e registra a justificativa
+                na trilha de auditoria. O novo prazo deve ser posterior ao atual.
+              </p>
+              <div
+                className="rgrid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                }}
+              >
+                <label className="field">
+                  <span className="field-label">Nova data-limite</span>
+                  <input
+                    className="input"
+                    type="date"
+                    value={extensionDueDate}
+                    disabled={!canManagePending || extendPendingMut.isPending}
+                    onChange={(event) =>
+                      setExtensionDueDate(event.target.value)
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Horário de Brasília</span>
+                  <input
+                    className="input"
+                    type="time"
+                    value={extensionDueTime}
+                    disabled={!canManagePending || extendPendingMut.isPending}
+                    onChange={(event) =>
+                      setExtensionDueTime(event.target.value)
+                    }
+                  />
+                </label>
+              </div>
+              <label className="field" style={{ marginTop: 8 }}>
+                <span className="field-label">
+                  Justificativa da prorrogação
+                </span>
+                <textarea
+                  className="input"
+                  rows={2}
+                  maxLength={1000}
+                  value={extensionReason}
+                  disabled={!canManagePending || extendPendingMut.isPending}
+                  onChange={(event) => setExtensionReason(event.target.value)}
+                />
+              </label>
+              {!canManagePending && (
+                <p className="muted small" style={{ marginTop: 7 }}>
+                  Somente o analista responsável ou um administrador pode
+                  prorrogar esta pendência.
+                </p>
+              )}
+              {extendPendingMut.isError && (
+                <p className="upload-meta error" style={{ marginTop: 7 }}>
+                  {(extendPendingMut.error as Error).message}
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 9 }}
+                disabled={
+                  !canManagePending ||
+                  extendPendingMut.isPending ||
+                  !extensionDueDate ||
+                  !extensionDueTime ||
+                  !extensionReason.trim()
+                }
+                onClick={() =>
+                  extendPendingMut.mutate({
+                    requestId: d.openPendingRequest!.id,
+                    dueAt: composeBrasiliaInstant(
+                      extensionDueDate,
+                      extensionDueTime,
+                    ),
+                    reason: extensionReason.trim(),
+                  })
+                }
+              >
+                <IconClock size={14} />{" "}
+                {extendPendingMut.isPending
+                  ? "Prorrogando…"
+                  : "Prorrogar prazo"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {d.status === "indeferido" && (
+          <div className="card card-pad" style={{ marginBottom: 16 }}>
+            <h3 className="h-card-title">
+              Reabrir decisão final como pendência
+            </h3>
+            <p className="muted small" style={{ margin: "5px 0 12px" }}>
+              Use somente quando houver autorização formal para corrigir um
+              indeferimento. A decisão anterior permanece no histórico e uma
+              nova solicitação delimitada é criada.
+            </p>
+            <label className="field">
+              <span className="field-label">Motivo formal da reabertura</span>
+              <textarea
+                className="input"
+                rows={3}
+                maxLength={2000}
+                value={reopenReason}
+                disabled={!canManagePending || reopenPendingMut.isPending}
+                onChange={(event) => setReopenReason(event.target.value)}
+              />
+            </label>
+            {rejectedDocuments.length > 0 && (
+              <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
+                <span className="field-label">
+                  Documentos liberados para correção
+                </span>
+                {rejectedDocuments.map((document) => {
+                  const key = documentPendingKey(document);
+                  return (
+                    <label
+                      key={key}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "flex-start",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={reopenDocumentKeys.includes(key)}
+                        disabled={
+                          !canManagePending || reopenPendingMut.isPending
+                        }
+                        onChange={(event) =>
+                          setReopenDocumentKeys((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, key])]
+                              : current.filter((candidate) => candidate !== key),
+                          )
+                        }
+                      />
+                      <span>
+                        {document.name}
+                        {document.memberName
+                          ? ` — ${document.memberName}`
+                          : ""}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
+              <span className="field-label">
+                Seções da ficha liberadas para correção
+              </span>
+              {PENDING_FORM_SECTIONS.map((section) => (
+                <label
+                  key={section.value}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-start",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={reopenSections.includes(section.value)}
+                    disabled={!canManagePending || reopenPendingMut.isPending}
+                    onChange={(event) =>
+                      setReopenSections((current) =>
+                        event.target.checked
+                          ? [...new Set([...current, section.value])]
+                          : current.filter(
+                              (candidate) => candidate !== section.value,
+                            ),
+                      )
+                    }
+                  />
+                  <span>Ficha · {section.label}</span>
+                </label>
+              ))}
+            </div>
+            <div
+              className="rgrid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              <label className="field">
+                <span className="field-label">Nova data-limite</span>
+                <input
+                  className="input"
+                  type="date"
+                  value={reopenDueDate}
+                  disabled={!canManagePending || reopenPendingMut.isPending}
+                  onChange={(event) => setReopenDueDate(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Horário de Brasília</span>
+                <input
+                  className="input"
+                  type="time"
+                  value={reopenDueTime}
+                  disabled={!canManagePending || reopenPendingMut.isPending}
+                  onChange={(event) => setReopenDueTime(event.target.value)}
+                />
+              </label>
+            </div>
+            {!canManagePending && (
+              <p className="muted small" style={{ marginTop: 7 }}>
+                Somente o analista responsável ou um administrador pode
+                executar a reabertura formal.
+              </p>
+            )}
+            {reopenPendingMut.isError && (
+              <p className="upload-meta error" style={{ marginTop: 7 }}>
+                {(reopenPendingMut.error as Error).message}
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{ marginTop: 10 }}
+              disabled={
+                !canManagePending ||
+                reopenPendingMut.isPending ||
+                !reopenReason.trim() ||
+                !reopenDueDate ||
+                !reopenDueTime ||
+                reopenItemsCount === 0
+              }
+              onClick={() => {
+                const items: PendingRequestInput["items"] = [
+                  ...selectedReopenDocuments.map((document) => ({
+                    kind: "DOCUMENT" as const,
+                    documentTypeId: document.documentTypeId,
+                    familyMemberId: document.familyMemberId,
+                    label: document.memberName
+                      ? `${document.name} — ${document.memberName}`
+                      : document.name,
+                  })),
+                  ...reopenSections.map((formSection) => ({
+                    kind: "FORM_SECTION" as const,
+                    formSection,
+                    label:
+                      PENDING_FORM_SECTIONS.find(
+                        (section) => section.value === formSection,
+                      )?.label ?? formSection,
+                  })),
+                ];
+                reopenPendingMut.mutate({
+                  reason: reopenReason.trim(),
+                  dueAt: composeBrasiliaInstant(
+                    reopenDueDate,
+                    reopenDueTime,
+                  ),
+                  items,
+                });
+              }}
+            >
+              <IconRefresh size={14} />{" "}
+              {reopenPendingMut.isPending
+                ? "Reabrindo…"
+                : "Reabrir como pendência"}
+            </button>
+          </div>
+        )}
 
         <div className="split">
           {/* Esquerda */}
@@ -1036,7 +1437,18 @@ export default function AnalysisPage() {
                           key={dec.id}
                           className="btn btn-ghost"
                           disabled={!canPerformAnalystActions}
-                          onClick={() => setDecision(dec.id)}
+                          onClick={() => {
+                            setDecision(dec.id);
+                            if (
+                              dec.id === "PENDENCIA" &&
+                              pendingDocumentKeys.length === 0 &&
+                              pendingSections.length === 0
+                            ) {
+                              setPendingDocumentKeys(
+                                rejectedDocuments.map(documentPendingKey),
+                              );
+                            }
+                          }}
                           style={{
                             justifyContent: "center",
                             borderColor: on ? `var(--${c}-600)` : undefined,
@@ -1109,6 +1521,146 @@ export default function AnalysisPage() {
                   </div>
                 )}
 
+                {decision === "PENDENCIA" && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      border: "1px solid var(--ink-200)",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div className="field-label">
+                      Itens devolvidos para correção{" "}
+                      <span style={{ color: "var(--red-600)" }}>*</span>
+                    </div>
+                    <p className="muted small" style={{ margin: "5px 0 10px" }}>
+                      O candidato poderá alterar somente os documentos e as
+                      seções marcados.
+                    </p>
+
+                    {rejectedDocuments.length > 0 && (
+                      <div style={{ display: "grid", gap: 7, marginBottom: 10 }}>
+                        {rejectedDocuments.map((document) => {
+                          const key = documentPendingKey(document);
+                          return (
+                            <label
+                              key={key}
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "flex-start",
+                                fontSize: 12.5,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={pendingDocumentKeys.includes(key)}
+                                onChange={(event) =>
+                                  setPendingDocumentKeys((current) =>
+                                    event.target.checked
+                                      ? [...new Set([...current, key])]
+                                      : current.filter(
+                                          (candidate) => candidate !== key,
+                                        ),
+                                  )
+                                }
+                              />
+                              <span>
+                                {document.name}
+                                {document.memberName
+                                  ? ` — ${document.memberName}`
+                                  : ""}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div style={{ display: "grid", gap: 7 }}>
+                      {PENDING_FORM_SECTIONS.map((section) => (
+                        <label
+                          key={section.value}
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "flex-start",
+                            fontSize: 12.5,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={pendingSections.includes(section.value)}
+                            onChange={(event) =>
+                              setPendingSections((current) =>
+                                event.target.checked
+                                  ? [...new Set([...current, section.value])]
+                                  : current.filter(
+                                      (candidate) =>
+                                        candidate !== section.value,
+                                    ),
+                              )
+                            }
+                          />
+                          <span>Ficha · {section.label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div
+                      className="rgrid"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 8,
+                        marginTop: 12,
+                      }}
+                    >
+                      <label className="field">
+                        <span className="field-label">
+                          Data-limite (opcional)
+                        </span>
+                        <input
+                          className="input"
+                          type="date"
+                          value={pendingDueDate}
+                          onChange={(event) =>
+                            setPendingDueDate(event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="field-label">
+                          Horário de Brasília
+                        </span>
+                        <input
+                          className="input"
+                          type="time"
+                          value={pendingDueTime}
+                          onChange={(event) =>
+                            setPendingDueTime(event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                    <p className="muted small" style={{ margin: "6px 0 0" }}>
+                      Se ficar em branco, será usado o fim da janela de
+                      correções publicada para esta chamada.
+                    </p>
+                    {!pendingDeadlineComplete && (
+                      <p className="upload-meta error" style={{ marginTop: 6 }}>
+                        Preencha data e horário juntos.
+                      </p>
+                    )}
+                    {pendingItemsCount === 0 && (
+                      <p className="upload-meta error" style={{ marginTop: 6 }}>
+                        Selecione ao menos um documento ou uma seção da ficha.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {decideMut.isError && (
                   <p className="upload-meta error" style={{ marginTop: 10 }}>
                     {(decideMut.error as Error).message}
@@ -1132,18 +1684,52 @@ export default function AnalysisPage() {
                     !decision ||
                     !parecer.trim() ||
                     ((decision === "PENDENCIA" || decision === "INDEFERIR") &&
-                      !reason)
+                      !reason) ||
+                    (decision === "PENDENCIA" &&
+                      (pendingItemsCount === 0 || !pendingDeadlineComplete))
                   }
-                  onClick={() =>
-                    decision &&
+                  onClick={() => {
+                    if (!decision) return;
+                    const pendingItems: AdminDecisionInput["pendingItems"] =
+                      decision === "PENDENCIA"
+                        ? [
+                            ...selectedPendingDocuments.map((document) => ({
+                              kind: "DOCUMENT" as const,
+                              documentTypeId: document.documentTypeId,
+                              familyMemberId: document.familyMemberId,
+                              label: document.memberName
+                                ? `${document.name} — ${document.memberName}`
+                                : document.name,
+                            })),
+                            ...pendingSections.map((formSection) => ({
+                              kind: "FORM_SECTION" as const,
+                              formSection,
+                              label:
+                                PENDING_FORM_SECTIONS.find(
+                                  (section) =>
+                                    section.value === formSection,
+                                )?.label ?? formSection,
+                            })),
+                          ]
+                        : undefined;
                     decideMut.mutate({
                       parecer: parecer.trim(),
                       decision,
                       scholarshipKind: kind || null,
                       reasonCode: reason || null,
                       isFinal: true,
-                    })
-                  }
+                      pendingDueAt:
+                        decision === "PENDENCIA" &&
+                        pendingDueDate &&
+                        pendingDueTime
+                          ? composeBrasiliaInstant(
+                              pendingDueDate,
+                              pendingDueTime,
+                            )
+                          : null,
+                      pendingItems,
+                    });
+                  }}
                 >
                   <IconCheck size={14} />{" "}
                   {decideMut.isPending ? "Registrando…" : "Registrar decisão"}

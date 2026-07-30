@@ -200,6 +200,140 @@ export interface CycleDto {
   term: number;
   submissionDeadline: string | null;
   resultDate: string | null;
+  status?: CycleStatus;
+}
+
+export type CycleStatus = "DRAFT" | "ACTIVE" | "CLOSED" | "ARCHIVED";
+
+export type SelectionCallKind =
+  | "FIRST_CALL"
+  | "SECOND_CALL"
+  | "WAITLIST"
+  | "OTHER";
+
+export type SelectionCallStatus =
+  | "DRAFT"
+  | "PUBLISHED"
+  | "CLOSED"
+  | "ARCHIVED";
+
+export type CallScheduleStatus = "DRAFT" | "PUBLISHED" | "SUPERSEDED";
+
+export type CallScheduleWindowKind =
+  | "REGISTRATION"
+  | "INITIAL_SUBMISSION"
+  | "PENDING_CORRECTION";
+
+export interface SelectionCallSummaryDto {
+  id: string;
+  cycle: { id: string; label: string; year: number; term: number };
+  code: string;
+  name: string;
+  kind: SelectionCallKind;
+  sequence: number;
+  status: SelectionCallStatus;
+  timeZone: string;
+}
+
+export interface CallScheduleWindowDto {
+  kind: CallScheduleWindowKind;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface CallScheduleRevisionDto {
+  id: string;
+  version: number;
+  status: CallScheduleStatus;
+  windows: CallScheduleWindowDto[];
+  createdAt: string;
+  publishedAt: string | null;
+  createdBy: { id: string; name: string } | null;
+  publishedBy: { id: string; name: string } | null;
+}
+
+export interface SelectionCallDto extends SelectionCallSummaryDto {
+  activeSchedule: CallScheduleRevisionDto | null;
+  draftSchedule: CallScheduleRevisionDto | null;
+}
+
+export interface ActionCapabilityDto {
+  allowed: boolean;
+  reason: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
+export interface ApplicationCapabilitiesDto {
+  editForm: ActionCapabilityDto;
+  uploadInitialDocuments: ActionCapabilityDto;
+  finalizeInitialSubmission: ActionCapabilityDto;
+  respondToPending: ActionCapabilityDto;
+}
+
+export type PendingRequestStatus =
+  | "OPEN"
+  | "SUBMITTED"
+  | "RESOLVED"
+  | "EXPIRED"
+  | "CANCELLED";
+
+export type PendingRequestItemKind = "DOCUMENT" | "FORM_SECTION";
+
+export type PendingFormSection =
+  | "STUDENT"
+  | "FAMILY"
+  | "HOUSING"
+  | "OTHER";
+
+export interface PendingRequestItemInput {
+  kind: PendingRequestItemKind;
+  documentTypeId?: string | null;
+  familyMemberId?: string | null;
+  formSection?: PendingFormSection | null;
+  label: string;
+}
+
+export interface PendingRequestItemDto {
+  id: string;
+  kind: PendingRequestItemKind;
+  documentTypeId: string | null;
+  familyMemberId: string | null;
+  formSection: PendingFormSection | null;
+  label: string;
+}
+
+export interface PendingRequestDto {
+  id: string;
+  applicationId: string;
+  status: PendingRequestStatus;
+  reason: string;
+  dueAt: string;
+  submittedAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  items: PendingRequestItemDto[];
+}
+
+export interface OpportunityDto {
+  id: string;
+  cpf: string;
+  fullName: string | null;
+  state: "AVAILABLE" | "CLAIMED" | "CANCELLED";
+  call: SelectionCallSummaryDto;
+  course: {
+    id: string;
+    name: string;
+    campus: { id: string; code: string; name: string };
+  } | null;
+  applicationId: string | null;
+  canClaim: boolean;
+  claimBlockedReason: string | null;
+}
+
+export interface OpportunityClaimResult {
+  applicationId: string;
+  protocol: string;
 }
 
 export interface ApplicationDto {
@@ -224,6 +358,9 @@ export interface ApplicationDto {
   priority: string | null;
   call: PreselectionCall; // chamada (1ª/2ª/espera)
   submissionDeadline: string | null; // prazo de entrega da chamada ("YYYY-MM-DD")
+  selectionCall: SelectionCallSummaryDto | null;
+  capabilities: ApplicationCapabilitiesDto;
+  openPendingRequest: PendingRequestDto | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -402,6 +539,8 @@ export interface AdminApplicationRow {
   perCapita: string | null; // renda bruta per capita (string decimal) ou null
   analyst: string | null; // nome do analista responsável, ou null
   call: PreselectionCall; // chamada (1ª/2ª/espera)
+  cycle: { id: string; label: string };
+  selectionCall: SelectionCallSummaryDto | null;
   updatedAt: string; // ISO
 }
 
@@ -428,6 +567,7 @@ export interface RmBulkExportResult {
 export interface AdminDocumentDto {
   documentId: string | null; // id do slot Document (null se ainda não há slot criado)
   documentTypeId: string;
+  familyMemberId: string | null;
   name: string; // nome do tipo de documento
   category: string; // título da categoria
   memberName: string | null; // integrante a que se refere (ou null = inscrição)
@@ -457,6 +597,8 @@ export interface AdminDecisionInput {
   scholarshipKind?: "INTEGRAL" | "PARCIAL" | null;
   reasonCode?: string | null; // motivo categórico — obrigatório em PENDENCIA/INDEFERIR
   isFinal?: boolean;
+  pendingDueAt?: string | null;
+  pendingItems?: PendingRequestItemInput[];
 }
 
 /** Motivos categóricos por decisão (obrigatórios em pendência/indeferimento; alimentam indicadores). */
@@ -501,6 +643,12 @@ export interface RegistrationCallStatus {
 export interface RegistrationStatusDto {
   open: boolean; // há alguma chamada aberta hoje
   calls: RegistrationCallStatus[];
+  selectionCalls?: {
+    call: SelectionCallSummaryDto;
+    startsAt: string | null;
+    endsAt: string | null;
+    open: boolean;
+  }[];
 }
 
 export interface PreselectionEntryDto {
@@ -515,6 +663,14 @@ export interface PreselectionEntryDto {
   candidateUserId: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  cycle?: { id: string; label: string };
+  selectionCall?: SelectionCallSummaryDto | null;
+  course?: {
+    id: string;
+    name: string;
+    campus: { id: string; code: string; name: string };
+  } | null;
+  state?: "AVAILABLE" | "CLAIMED" | "CANCELLED";
   createdAt: string;
 }
 
@@ -526,6 +682,9 @@ export interface PreselectionInput {
   campusHint?: string | null;
   enemRegistration?: string | null;
   call?: PreselectionCall;
+  cycleId?: string;
+  callId?: string;
+  courseId?: string;
 }
 
 /** Resultado da importação de planilha (CSV/Excel) de pré-selecionados. */
@@ -550,6 +709,8 @@ export interface MaintenanceSummaryDto {
   verificationTokens: number;
   preselectionEntries: number;
   preselectionImports: number;
+  pendingRequests: number;
+  scholarshipGrants: number;
   auditLogs: number;
 }
 
@@ -584,6 +745,8 @@ export interface SystemSettingsDto {
   waitlistStart: string | null; // lista de espera
   waitlistEnd: string | null;
   notifyCandidate: boolean; // avisar o candidato por e-mail nas decisões
+  allowPendencyResubmission: boolean; // candidato em pendência reenvia/corrige mesmo fora do prazo da chamada
+  pendencyResubmissionDeadline: string | null; // "YYYY-MM-DD" — data limite do reenvio de pendências (null = sem prazo extra)
   updatedAt: string; // ISO
   integralCap: string; // teto integral calculado = minimumWage × integralFactor
   parcialCap: string; // teto parcial calculado = minimumWage × parcialFactor
@@ -771,6 +934,7 @@ export interface CatalogCourseDto extends CourseDto {
 
 /** Perfis de equipe que podem acessar o sistema (exclui CANDIDATE). */
 export type StaffRole = "ADMIN" | "ANALYST" | "VIEWER";
+export type SystemPermissionName = "MANAGE_SCHEDULE";
 
 /** Usuário interno (equipe) — linha do CRUD de Configurações → Usuários. */
 export interface UserDto {
@@ -780,6 +944,7 @@ export interface UserDto {
   email: string;
   role: StaffRole;
   active: boolean;
+  permissions: SystemPermissionName[];
   createdAt: string;
 }
 
@@ -878,6 +1043,9 @@ export interface AdminApplicationDetail {
   email: string;
   course: string;
   campus: string | null;
+  cycle: { id: string; label: string };
+  call: PreselectionCall;
+  selectionCall: SelectionCallSummaryDto | null;
   status: ProcessStatus;
   priority: Priority;
   optsForQuota: boolean;
@@ -893,6 +1061,7 @@ export interface AdminApplicationDetail {
   family: FamilyMemberDto[];
   documents: AdminDocumentDto[];
   docTotals: { required: number; sent: number; approved: number };
+  openPendingRequest: PendingRequestDto | null;
   events: ApplicationEventDto[];
   /** Integração RM: nº da inscrição no RM (null = não exportado) e quando foi exportado. */
   rmRegistration: string | null;

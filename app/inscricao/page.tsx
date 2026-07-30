@@ -301,20 +301,54 @@ function StepAccount({
 function StepCurso({
   campus,
   courseId,
+  lockedApplication,
   onCampus,
   onCourse,
 }: {
   campus: string;
   courseId: string | null;
+  lockedApplication: ApplicationDto | null;
   onCampus: (code: string) => void;
   onCourse: (id: string) => void;
 }) {
-  const campuses = useQuery({ queryKey: ["campuses"], queryFn: coursesApi.campuses });
+  const campuses = useQuery({
+    queryKey: ["campuses"],
+    queryFn: coursesApi.campuses,
+    enabled: !lockedApplication,
+  });
   const courses = useQuery({
     queryKey: ["courses", campus],
     queryFn: () => coursesApi.courses(campus),
-    enabled: !!campus,
+    enabled: !!campus && !lockedApplication,
   });
+
+  if (lockedApplication) {
+    return (
+      <>
+        <h2 className="signup-title">Curso da sua pré-seleção</h2>
+        <p className="signup-sub">
+          Esta opção veio da lista oficial do MEC e fica vinculada somente a
+          esta chamada.
+        </p>
+        <div className="card" style={{ marginTop: 22, padding: 18 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>
+            {lockedApplication.course?.name ?? "Curso não identificado"}
+          </div>
+          <div className="muted small" style={{ marginTop: 5 }}>
+            Campus {lockedApplication.course?.campus.name ?? "—"} ·{" "}
+            {lockedApplication.selectionCall?.name ??
+              lockedApplication.call}{" "}
+            · {lockedApplication.cycle.label}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Badge tone="info" dot={false}>
+              Definido pela pré-seleção do MEC
+            </Badge>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -1011,6 +1045,8 @@ export default function InscricaoPage() {
   const [appId, setAppId] = useState<string | null>(null);
   const [campus, setCampus] = useState("SCS");
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [lockedApplication, setLockedApplication] =
+    useState<ApplicationDto | null>(null);
   const [finalApp, setFinalApp] = useState<ApplicationDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -1074,7 +1110,9 @@ export default function InscricaoPage() {
         }
         setSaving(true);
         const id = await ensureAppId();
-        if (id) await applicationsApi.course(id, { courseId });
+        if (id && !lockedApplication) {
+          await applicationsApi.course(id, { courseId });
+        }
       } else if (step === "revisao") {
         setSaving(true);
         const id = await ensureAppId();
@@ -1130,6 +1168,7 @@ export default function InscricaoPage() {
                 setCourseId(me.course.id);
                 setCampus(me.course.campus.code);
               }
+              setLockedApplication(me.selectionCall ? me : null);
             }
             setStepIdx(1);
           }}
@@ -1139,6 +1178,7 @@ export default function InscricaoPage() {
         <StepCurso
           campus={campus}
           courseId={courseId}
+          lockedApplication={lockedApplication}
           onCampus={(c) => { setCampus(c); setCourseId(null); }}
           onCourse={setCourseId}
         />

@@ -144,6 +144,21 @@ export const courseSelectSchema = z.object({
 });
 export type CourseSelectInput = z.infer<typeof courseSelectSchema>;
 
+export const applicationDeclarationsSchema = z.object({
+  optsForQuota: z.boolean(),
+  isPcd: z.boolean(),
+  isImtAffiliated: z.boolean(),
+  acceptTerms: z
+    .boolean()
+    .refine(
+      (value) => value,
+      "É necessário confirmar os termos desta inscrição",
+    ),
+});
+export type ApplicationDeclarationsInput = z.infer<
+  typeof applicationDeclarationsSchema
+>;
+
 /** Situação de renda do integrante — define os documentos de renda exigidos dele. */
 export const incomeSituationSchema = z.enum([
   "ASSALARIADO",
@@ -264,8 +279,125 @@ export const preselectionInputSchema = z.object({
   campusHint: txt(40).optional(),
   enemRegistration: txt(20).optional(),
   call: preselectionCallSchema,
+  cycleId: z.string().min(1).optional(),
+  callId: z.string().min(1).optional(),
+  courseId: z.string().min(1).optional(),
 });
 export type PreselectionInputSchema = z.infer<typeof preselectionInputSchema>;
+
+export const selectionCallKindSchema = z.enum([
+  "FIRST_CALL",
+  "SECOND_CALL",
+  "WAITLIST",
+]);
+
+export const selectionCallInputSchema = z.object({
+  cycleId: z.string().min(1, "Selecione o ciclo"),
+  code: txt(40)
+    .min(1, "Informe o código")
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/i,
+      "Use apenas letras, números e hífens",
+    ),
+  name: txt(80).min(1, "Informe o nome da chamada"),
+  kind: selectionCallKindSchema,
+  sequence: z.coerce.number().int().min(1).max(999),
+  timeZone: txt(80)
+    .default("America/Sao_Paulo")
+    .refine(
+      (value) => value === "America/Sao_Paulo",
+      "O processo PROUNI deve usar o fuso America/Sao_Paulo",
+    ),
+});
+export type SelectionCallInput = z.infer<typeof selectionCallInputSchema>;
+
+const instantWithOffsetSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/,
+    "Informe data, horário e deslocamento do fuso",
+  )
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Data/hora inválida");
+
+export const callScheduleWindowInputSchema = z.object({
+  kind: z.enum([
+    "REGISTRATION",
+    "INITIAL_SUBMISSION",
+    "PENDING_CORRECTION",
+  ]),
+  startsAt: instantWithOffsetSchema,
+  endsAt: instantWithOffsetSchema,
+});
+
+export const callScheduleInputSchema = z
+  .object({
+    windows: z.array(callScheduleWindowInputSchema).length(3),
+  })
+  .superRefine(({ windows }, ctx) => {
+    const kinds = new Set(windows.map((window) => window.kind));
+    if (kinds.size !== 3) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["windows"],
+        message: "Informe uma janela de cada tipo",
+      });
+    }
+
+    windows.forEach((window, index) => {
+      if (Date.parse(window.startsAt) >= Date.parse(window.endsAt)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["windows", index, "endsAt"],
+          message: "O fim deve ser posterior ao início",
+        });
+      }
+    });
+  });
+export type CallScheduleInput = z.infer<typeof callScheduleInputSchema>;
+
+export const pendingRequestItemInputSchema = z
+  .object({
+    kind: z.enum(["DOCUMENT", "FORM_SECTION"]),
+    documentTypeId: z.string().min(1).nullable().optional(),
+    familyMemberId: z.string().min(1).nullable().optional(),
+    formSection: z
+      .enum(["STUDENT", "FAMILY", "HOUSING", "OTHER"])
+      .nullable()
+      .optional(),
+    label: txt(160).min(1, "Informe o item que deve ser corrigido"),
+  })
+  .superRefine((item, ctx) => {
+    if (item.kind === "DOCUMENT" && !item.documentTypeId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["documentTypeId"],
+        message: "Informe o tipo de documento",
+      });
+    }
+    if (item.kind === "FORM_SECTION" && !item.formSection) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["formSection"],
+        message: "Informe a seção da ficha",
+      });
+    }
+  });
+
+export const pendingRequestInputSchema = z.object({
+  reason: txt(2000).min(1, "Informe o motivo da pendência"),
+  dueAt: instantWithOffsetSchema,
+  items: z
+    .array(pendingRequestItemInputSchema)
+    .min(1, "Selecione ao menos um item"),
+});
+export type PendingRequestInput = z.infer<typeof pendingRequestInputSchema>;
+
+export const pendingExtensionSchema = z.object({
+  dueAt: instantWithOffsetSchema,
+  reason: txt(1000).min(1, "Informe a justificativa da prorrogação"),
+});
+export type PendingExtensionInput = z.infer<typeof pendingExtensionSchema>;
 
 /** Frase de confirmação exigida para limpar a base de candidatos (manutenção). */
 export const RESET_CONFIRMATION = "LIMPAR BASE";
@@ -301,6 +433,11 @@ export const userUpdateSchema = z.object({
   password: passwordSchema.optional(),
 });
 export type UserUpdateSchema = z.infer<typeof userUpdateSchema>;
+
+export const userPermissionsSchema = z.object({
+  permissions: z.array(z.enum(["MANAGE_SCHEDULE"])).max(20),
+});
+export type UserPermissionsInput = z.infer<typeof userPermissionsSchema>;
 
 /* =============== Catálogo (Operação → Cursos e Documentos) =============== */
 
@@ -376,5 +513,7 @@ export const systemSettingsSchema = z.object({
   waitlistStart: dateStr,
   waitlistEnd: dateStr,
   notifyCandidate: z.boolean(),
+  allowPendencyResubmission: z.boolean(),
+  pendencyResubmissionDeadline: dateStr,
 });
 export type SystemSettingsInput = z.infer<typeof systemSettingsSchema>;

@@ -85,6 +85,7 @@ const adminNav: NavItem[] = [
     icon: IconSettings,
     children: [
       { id: "presel", label: "Pré-selecionados", href: "/admin/configuracoes" },
+      { id: "schedule", label: "Cronograma e prazos", href: "/admin/configuracoes/cronograma", match: "/admin/configuracoes/cronograma" },
       { id: "users", label: "Usuários", href: "/admin/configuracoes/usuarios", match: "/admin/configuracoes/usuarios" },
       { id: "params", label: "Parâmetros do sistema", href: "/admin/configuracoes/parametros", match: "/admin/configuracoes/parametros" },
       { id: "maint", label: "Manutenção", href: "/admin/configuracoes/manutencao", match: "/admin/configuracoes/manutencao" },
@@ -132,6 +133,22 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
   const { user, logout } = useAuth();
   const isAdmin = role === "admin";
   const nav = isAdmin ? adminNav : candidateNav;
+  const candidateApplicationSegment = !isAdmin
+    ? /^\/inscricoes\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
+    : undefined;
+  const candidateHref = (item: NavLink): string => {
+    if (!candidateApplicationSegment) return item.href;
+    const sectionById: Partial<Record<NavLink["id"], string>> = {
+      form: "ficha",
+      docs: "documentos",
+      status: "acompanhamento",
+      notif: "notificacoes",
+    };
+    const section = sectionById[item.id];
+    return section
+      ? `/inscricoes/${candidateApplicationSegment}/${section}`
+      : item.href;
+  };
   const [pwdOpen, setPwdOpen] = useState(false);
 
   // Contagem real de candidatos para o badge (compartilha o cache da página de candidatos).
@@ -168,10 +185,11 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
             return <NavParentItem key={it.id} item={it} pathname={pathname} />;
           }
           const I = it.icon;
-          const active = it.match ? pathname.startsWith(it.match) : pathname === it.href;
+          const href = isAdmin ? it.href : candidateHref(it);
+          const active = it.match ? pathname.startsWith(it.match) : pathname === href;
           const badge = it.id === "queue" ? queueCount : it.badge;
           return (
-            <Link key={it.id} href={it.href} className={`nav-item ${active ? "active" : ""}`}>
+            <Link key={it.id} href={href} className={`nav-item ${active ? "active" : ""}`}>
               <I className="nav-icon" />
               <span>{it.label}</span>
               {badge != null && <span className="nav-badge">{badge}</span>}
@@ -205,6 +223,7 @@ function Sidebar({ role, open = false }: { role: Role; open?: boolean }) {
 
 function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role; onBurger?: () => void }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [q, setQ] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -225,6 +244,11 @@ function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role
     const term = q.trim();
     router.push(term ? `/admin/candidatos?q=${encodeURIComponent(term)}` : "/admin/candidatos");
   };
+  const candidateApplicationSegment =
+    /^\/inscricoes\/([^/]+)(?:\/|$)/.exec(pathname)?.[1];
+  const notificationsHref = candidateApplicationSegment
+    ? `/inscricoes/${candidateApplicationSegment}/notificacoes`
+    : "/notificacoes";
 
   return (
     <header className="topbar">
@@ -255,7 +279,7 @@ function Topbar({ crumbs = [], role, onBurger }: { crumbs?: string[]; role: Role
           </div>
         )}
         {role === "candidate" && (
-          <button className="icon-btn has-dot" title="Notificações" onClick={() => router.push("/notificacoes")}>
+          <button className="icon-btn has-dot" title="Notificações" onClick={() => router.push(notificationsHref)}>
             <IconBell size={17} />
           </button>
         )}
