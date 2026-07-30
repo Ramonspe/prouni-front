@@ -3,10 +3,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import { ProcessContextSelector } from "@/components/process-context-selector";
 import { Avatar, Banner, StatusBadge } from "@/components/ui";
 import { IconArrowDown, IconArrowUp, IconChevL, IconChevR, IconDownload, IconPrint, IconRefresh, IconSearch, IconUpload } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
+import { useAdminProcessContext } from "@/lib/use-admin-process-context";
 import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus, type RmBulkExportResult } from "@prouni/shared";
 
 type Tab = "all" | "review" | "pending" | "decided";
@@ -15,6 +17,9 @@ type SortDirection = "asc" | "desc";
 const DECIDED: ProcessStatus[] = ["classificado", "espera", "indeferido", "concedida"];
 function callLabel(c: PreselectionCall): string {
   return PRESELECTION_CALLS.find((x) => x.value === c)?.label ?? c;
+}
+function rowCallLabel(row: AdminApplicationRow): string {
+  return row.selectionCall?.name ?? callLabel(row.call);
 }
 
 function fmtMoney(v: string | null): string {
@@ -42,7 +47,7 @@ function exportCsv(rows: AdminApplicationRow[]): void {
       c.name,
       c.cpf,
       c.course,
-      callLabel(c.call),
+      rowCallLabel(c),
       STATUS_MAP[c.status]?.label ?? c.status,
       c.perCapita ?? "",
       String(c.docsApproved),
@@ -68,9 +73,9 @@ function CandidatosInner() {
   const qc = useQueryClient();
   const { user, loading } = useRequireStaff();
   const searchParams = useSearchParams();
+  const processContext = useAdminProcessContext(Boolean(user));
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
-  const [callFilter, setCallFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [analystFilter, setAnalystFilter] = useState("all"); // "all" | "none" | nome do analista
@@ -86,9 +91,18 @@ function CandidatosInner() {
   }, [searchParams]);
 
   const query = useQuery({
-    queryKey: ["admin", "applications", callFilter],
-    queryFn: () => adminApi.applications({ call: callFilter }),
-    enabled: !!user,
+    queryKey: [
+      "admin",
+      "applications",
+      processContext.cycleId,
+      processContext.callId,
+    ],
+    queryFn: () =>
+      adminApi.applications({
+        cycleId: processContext.cycleId,
+        callId: processContext.callId,
+      }),
+    enabled: Boolean(user && processContext.cycleId),
   });
   const all = useMemo(() => query.data ?? [], [query.data]);
 
@@ -146,7 +160,7 @@ function CandidatosInner() {
         if (sortKey === "status") return compareText(STATUS_MAP[a.status].label, STATUS_MAP[b.status].label) * multiplier;
         return compareText(a[sortKey], b[sortKey]) * multiplier;
       });
-  }, [all, analystFilter, callFilter, courseFilter, dateFilter, search, sortDirection, sortKey, statusFilter, tab]);
+  }, [all, analystFilter, courseFilter, dateFilter, search, sortDirection, sortKey, statusFilter, tab]);
   const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
   const exportableRows = useMemo(
     () => tab === "decided" ? rows.filter((c) => c.status === "classificado") : [],
@@ -229,7 +243,7 @@ function CandidatosInner() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <h1 className="page-title">Candidatos</h1>
-            <p className="page-subtitle">Gestão completa das inscrições PROUNI · ciclo ativo.</p>
+            <p className="page-subtitle">Gestão das inscrições por processo e chamada, incluindo históricos.</p>
           </div>
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
             {canRefresh && <button className="btn btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={14} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
@@ -244,6 +258,19 @@ function CandidatosInner() {
             </button>
           </div>
         </div>
+
+        {processContext.cycleOptions.length > 0 && (
+          <ProcessContextSelector
+            cycles={processContext.cycleOptions}
+            calls={processContext.callOptions}
+            cycleId={processContext.cycleId}
+            callId={processContext.callId}
+            onCycleChange={processContext.setCycleId}
+            onCallChange={processContext.setCallId}
+            disabled={processContext.isLoading}
+            helperText="A fila, a exportação e todas as ações abaixo usam este contexto."
+          />
+        )}
 
         <div className="tabs">
           {tabs.map(([id, l, n]) => (
@@ -262,10 +289,6 @@ function CandidatosInner() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select className="input" style={{ width: 170 }} value={callFilter} onChange={(e) => setCallFilter(e.target.value)}>
-            <option value="all">Todas as chamadas</option>
-            {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
           <select className="input" style={{ width: 180 }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} aria-label="Filtrar por curso">
             <option value="all">Todos os cursos</option>
             {courseOptions.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -336,7 +359,7 @@ function CandidatosInner() {
               </tr>
             </thead>
             <tbody>
-              {loading || query.isLoading ? (
+              {loading || processContext.isLoading || query.isLoading ? (
                 <tr><td colSpan={tab === "decided" ? 11 : 10} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando candidatos…</td></tr>
               ) : query.isError ? (
                 <tr><td colSpan={tab === "decided" ? 11 : 10} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar os candidatos.</td></tr>
@@ -365,7 +388,7 @@ function CandidatosInner() {
                       </div>
                     </td>
                     <td>{c.course}</td>
-                    <td>{callLabel(c.call)}</td>
+                    <td>{rowCallLabel(c)}</td>
                     <td><StatusBadge status={c.status} /></td>
                     <td className="mono">{fmtMoney(c.perCapita)}</td>
                     <td className="mono">{c.docsApproved}/{c.docsSent}</td>

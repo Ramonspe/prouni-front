@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Banner } from "@/components/ui";
 import { useRequireStaff } from "@/lib/use-require-auth";
-import { settingsApi } from "@/lib/api";
+import { selectionCallsApi, settingsApi } from "@/lib/api";
 import type { SystemSettingsInput } from "@prouni/shared";
 
 const EMPTY: SystemSettingsInput = {
@@ -16,6 +17,8 @@ const EMPTY: SystemSettingsInput = {
   call2Start: null, call2End: null,
   waitlistStart: null, waitlistEnd: null,
   notifyCandidate: false,
+  allowPendencyResubmission: true,
+  pendencyResubmissionDeadline: null,
 };
 
 /** Formata "1518.00" (ou "1,5") em R$ pt-BR; retorna "—" se inválido. */
@@ -42,6 +45,14 @@ export default function ParametrosPage() {
     queryFn: () => settingsApi.get(),
     enabled: !!user && isAdmin,
   });
+  const callsQuery = useQuery({
+    queryKey: ["admin", "selection-calls", "legacy-lock"],
+    queryFn: () => selectionCallsApi.list(),
+    enabled: !!user && isAdmin,
+  });
+  const hasCanonicalSchedule = (callsQuery.data?.length ?? 0) > 0;
+  const legacyScheduleLocked =
+    callsQuery.isLoading || callsQuery.isError || hasCanonicalSchedule;
 
   const [form, setForm] = useState<SystemSettingsInput>(EMPTY);
   const [seeded, setSeeded] = useState(false);
@@ -57,6 +68,8 @@ export default function ParametrosPage() {
         call2Start: d.call2Start, call2End: d.call2End,
         waitlistStart: d.waitlistStart, waitlistEnd: d.waitlistEnd,
         notifyCandidate: d.notifyCandidate,
+        allowPendencyResubmission: d.allowPendencyResubmission,
+        pendencyResubmissionDeadline: d.pendencyResubmissionDeadline,
       });
       setSeeded(true);
     }
@@ -79,6 +92,7 @@ export default function ParametrosPage() {
         type="date"
         className="input"
         value={(form[key] as string | null) ?? ""}
+        disabled={legacyScheduleLocked}
         onChange={(e) => setDate(key, e.target.value)}
       />
     </div>
@@ -90,8 +104,8 @@ export default function ParametrosPage() {
         <div style={{ marginBottom: 14 }}>
           <h1 className="page-title">Parâmetros do sistema</h1>
           <p className="page-subtitle">
-            Variáveis globais do processo — salário mínimo, faixas de renda, prazos das chamadas e o
-            comportamento de aviso ao candidato. Alterar aqui reflete em todo o sistema.
+            Variáveis globais de renda e notificações. Os prazos operacionais
+            são administrados por chamada no cronograma versionado.
           </p>
         </div>
 
@@ -156,6 +170,22 @@ export default function ParametrosPage() {
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header"><h3 className="h-card-title">Cronograma — janelas de entrega de documentos</h3></div>
               <div className="card-body">
+                {hasCanonicalSchedule ? (
+                  <Banner tone="info" title="Cronograma migrado">
+                    Estes campos antigos estão disponíveis apenas para consulta.
+                    Datas, horários e cada tipo de janela devem ser alterados em{" "}
+                    <Link href="/admin/configuracoes/cronograma">
+                      Cronograma e prazos
+                    </Link>
+                    .
+                  </Banner>
+                ) : callsQuery.isError ? (
+                  <Banner tone="warn" title="Cronograma protegido">
+                    Não foi possível confirmar a origem oficial dos prazos.
+                    Os campos permanecem bloqueados até a consulta ser
+                    restabelecida.
+                  </Banner>
+                ) : null}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, maxWidth: 560 }}>
                   {dateField("1ª chamada — início", "call1Start")}
                   {dateField("1ª chamada — fim", "call1End")}
@@ -163,6 +193,39 @@ export default function ParametrosPage() {
                   {dateField("2ª chamada — fim", "call2End")}
                   {dateField("Lista de espera — início", "waitlistStart")}
                   {dateField("Lista de espera — fim", "waitlistEnd")}
+                </div>
+
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line, #e5e7eb)" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.allowPendencyResubmission}
+                      onChange={(e) => set("allowPendencyResubmission", e.target.checked)} />
+                    Liberar reenvio de documentos em pendência mesmo fora do prazo
+                  </label>
+                  <p className="muted small" style={{ marginTop: 6, maxWidth: 620 }}>
+                    Padrão <strong>ligado</strong>. Quando um analista devolve a inscrição como{" "}
+                    <strong>pendência</strong> (documento reprovado que precisa ser reenviado, ou correção na
+                    ficha), a análise normalmente acontece <strong>depois</strong> do fim da chamada. Com esta
+                    opção ligada, esses candidatos conseguem reenviar os documentos e corrigir a ficha mesmo
+                    após o prazo — <strong>somente</strong> as inscrições que a equipe colocou em pendência.
+                    Cadastros e primeiros envios continuam presos ao prazo da chamada. Desligue apenas se a
+                    Secretaria quiser encerrar o recebimento por completo na data-limite.
+                  </p>
+                  {form.allowPendencyResubmission && (
+                    <div className="field" style={{ maxWidth: 272, marginTop: 10 }}>
+                      <label className="field-label">Data limite para reenvio de pendências (opcional)</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={form.pendencyResubmissionDeadline ?? ""}
+                        onChange={(e) => setDate("pendencyResubmissionDeadline", e.target.value)}
+                      />
+                      <p className="muted small" style={{ marginTop: 6 }}>
+                        {form.pendencyResubmissionDeadline
+                          ? "Pendências podem reenviar até esta data (inclusive). Depois dela, o reenvio é bloqueado."
+                          : "Em branco: sem prazo extra — enquanto a inscrição estiver em pendência, o reenvio fica liberado."}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

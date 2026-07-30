@@ -1,15 +1,27 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import {
+  CandidateApplicationHeader,
+  CandidateApplicationSelectionMessage,
+} from "@/components/candidate-application-context";
+import { PendingRequestPanel } from "@/components/pending-request-panel";
 import { Badge, Banner } from "@/components/ui";
 import { IconCheck, IconChevR, IconDownload, IconFile, IconInfo, IconUpload, IconUser, IconX } from "@/components/icons";
 import { useRequireAuth } from "@/lib/use-require-auth";
+import { useCandidateApplication } from "@/lib/use-candidate-application";
+import {
+  applicationRoute,
+  documentUploadCapability,
+} from "@/lib/application-context";
 import { applicationsApi, documentsApi, familyApi, socioApi } from "@/lib/api";
 import { needsPdfRegeneration, PDF_REGENERATION_MESSAGE } from "@/lib/pdf-upload-preflight";
 import {
   applicationCompletionIssues,
+  type ActionCapabilityDto,
   type BadgeTone,
   type RequiredDocumentDto,
   type UploadedDocumentDto,
@@ -65,13 +77,13 @@ function DocDetail({
   item,
   uploaded,
   appId,
-  locked,
+  capability,
   onClose,
 }: {
   item: Selected;
   uploaded?: UploadedDocumentDto;
   appId: string;
-  locked: boolean;
+  capability: ActionCapabilityDto;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -87,7 +99,8 @@ function DocDetail({
   const mutation = useMutation({
     mutationFn: (f: File) => documentsApi.upload(appId, item.typeId, item.member?.id ?? null, f),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["application", appId, "documents"] });
+      void qc.invalidateQueries({ queryKey: ["application", appId, "documents"] });
+      void qc.invalidateQueries({ queryKey: ["applications", "mine"] });
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     },
@@ -201,9 +214,10 @@ function DocDetail({
           </Banner>
         )}
 
-        {locked ? (
-          <Banner tone="warn" title="Envio bloqueado">
-            A inscrição já foi decidida — não é mais possível enviar ou reenviar documentos.
+        {!capability.allowed ? (
+          <Banner tone="warn" title="Envio indisponível">
+            {capability.reason ??
+              "Este documento está disponível somente para consulta."}
           </Banner>
         ) : (
         <>
@@ -292,10 +306,12 @@ function DocDetail({
 function DocRow({
   item,
   uploaded,
+  capability,
   onClick,
 }: {
   item: RequiredDocumentDto;
   uploaded?: UploadedDocumentDto;
+  capability: ActionCapabilityDto;
   onClick: () => void;
 }) {
   const st = statusInfo(uploaded, item.required);
@@ -319,37 +335,50 @@ function DocRow({
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Badge tone={st.tone}>{st.label}</Badge>
         <button className="btn btn-ghost btn-sm">
-          {st.hasFile ? "Reenviar" : "Enviar"} <IconChevR size={13} />
+          {capability.allowed
+            ? st.hasFile
+              ? "Reenviar"
+              : "Enviar"
+            : "Consultar"}{" "}
+          <IconChevR size={13} />
         </button>
       </div>
     </div>
   );
 }
 
-export default function DocumentosPage() {
+function DocumentosPageContent({
+  applicationId,
+}: {
+  applicationId?: string | null;
+}) {
   const { user, loading } = useRequireAuth();
   const [selected, setSelected] = useState<Selected | null>(null);
 
-  const app = useQuery({ queryKey: ["application", "me"], queryFn: applicationsApi.me, enabled: !!user });
+  const applicationQuery = useCandidateApplication(
+    applicationId,
+    Boolean(user),
+  );
+  const application = applicationQuery.application;
   const socio = useQuery({
-    queryKey: ["socio", app.data?.id],
-    queryFn: () => socioApi.get(app.data!.id),
-    enabled: !!app.data?.id,
+    queryKey: ["socio", application?.id],
+    queryFn: () => socioApi.get(application!.id),
+    enabled: !!application?.id,
   });
   const family = useQuery({
-    queryKey: ["family", app.data?.id],
-    queryFn: () => familyApi.list(app.data!.id),
-    enabled: !!app.data?.id,
+    queryKey: ["family", application?.id],
+    queryFn: () => familyApi.list(application!.id),
+    enabled: !!application?.id,
   });
   const docs = useQuery({
-    queryKey: ["application", app.data?.id, "required-documents"],
-    queryFn: () => applicationsApi.requiredDocuments(app.data!.id),
-    enabled: !!app.data?.id,
+    queryKey: ["application", application?.id, "required-documents"],
+    queryFn: () => applicationsApi.requiredDocuments(application!.id),
+    enabled: !!application?.id,
   });
   const uploadedQuery = useQuery({
-    queryKey: ["application", app.data?.id, "documents"],
-    queryFn: () => documentsApi.list(app.data!.id),
-    enabled: !!app.data?.id,
+    queryKey: ["application", application?.id, "documents"],
+    queryFn: () => documentsApi.list(application!.id),
+    enabled: !!application?.id,
   });
 
   const uploadedByKey = useMemo(() => {
@@ -360,11 +389,8 @@ export default function DocumentosPage() {
 
   const qc = useQueryClient();
   const data = docs.data;
-  const appId = app.data?.id;
-  const status = app.data?.status ?? "";
-  // Envio liberado só enquanto INICIADA/PENDENCIA; após finalizar/analisar, trava (espelha o back).
-  const editable = ["iniciada", "pendencia"].includes(status);
-  const locked = !editable;
+  const appId = application?.id;
+  const status = application?.status ?? "";
   const sentCount = (uploadedQuery.data ?? []).filter((u) => u.status !== "A_ENVIAR").length;
   const requiredItems = data?.categories.flatMap((category) => category.items.filter((item) => item.required)) ?? [];
   const sentRequiredCount = requiredItems.filter((item) => {
@@ -372,7 +398,7 @@ export default function DocumentosPage() {
     return uploaded?.status === "ENVIADO" || uploaded?.status === "APROVADO";
   }).length;
   const allRequiredSent = !!data && sentRequiredCount === requiredItems.length;
-  const hasCourse = !!app.data?.course;
+  const hasCourse = !!application?.course;
   const completionIssues = applicationCompletionIssues({
     form: socio.data?.form,
     members: family.data,
@@ -380,44 +406,78 @@ export default function DocumentosPage() {
   });
   const allFieldsComplete = !socio.isLoading && !family.isLoading && !!socio.data && !!family.data && completionIssues.length === 0;
   const selectedUploaded = selected ? uploadedByKey.get(slotKey(selected.typeId, selected.member?.id ?? null)) : undefined;
+  const selectedCapability =
+    selected && application
+      ? documentUploadCapability(
+          application,
+          selected.typeId,
+          selected.member?.id ?? null,
+        )
+      : null;
+  const finalizeCapability =
+    application?.capabilities.finalizeInitialSubmission;
+
+  useEffect(() => {
+    setSelected(null);
+  }, [appId]);
 
   const finalizeMut = useMutation({
     mutationFn: () => applicationsApi.finalize(appId as string),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["application", "me"] });
-      qc.invalidateQueries({ queryKey: ["application", appId, "documents"] });
+      void qc.invalidateQueries({ queryKey: ["applications", "mine"] });
+      void qc.invalidateQueries({ queryKey: ["application", appId, "documents"] });
     },
   });
 
   return (
     <AppShell role="candidate" crumbs={["PROUNI", "Inscrição", "Documentos"]}>
-      <div className="content fade-in">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-          <div>
-            <h1 className="page-title">Documentos</h1>
-            <p className="page-subtitle">
-              Esta lista é montada <strong>automaticamente</strong> a partir do seu grupo familiar, da situação
-              de renda de cada integrante e da sua moradia. Formatos: <span className="mono">PDF, JPG, PNG</span> ·
-              até <span className="mono">10 MB</span>.
-            </p>
-          </div>
-        </div>
-
-        {loading || app.isLoading || docs.isLoading || socio.isLoading || family.isLoading ? (
+      <main className="content fade-in">
+        {loading || applicationQuery.isLoading ? (
+          <div className="card card-pad muted">Carregando sua inscrição…</div>
+        ) : applicationQuery.isError ? (
+          <Banner tone="warn" title="Não foi possível carregar a inscrição">
+            Atualize a página e tente novamente.
+          </Banner>
+        ) : applicationQuery.notFound ||
+          applicationQuery.requiresSelection ? (
+          <CandidateApplicationSelectionMessage
+            notFound={applicationQuery.notFound}
+          />
+        ) : !application ? (
+          <Banner tone="info" title="Nenhuma inscrição iniciada">
+            Consulte no <Link href="/painel">painel</Link> se há uma nova
+            pré-seleção disponível.
+          </Banner>
+        ) : docs.isLoading || socio.isLoading || family.isLoading ? (
           <div className="card card-pad muted">Montando sua lista de documentos…</div>
-        ) : app.isError || docs.isError || !data ? (
+        ) : docs.isError || !data ? (
           <Banner tone="warn" title="Não foi possível carregar os documentos">
-            Não localizamos uma inscrição ativa para o seu acesso neste ciclo.
+            Não foi possível montar a lista desta inscrição.
           </Banner>
         ) : (
           <>
+            <CandidateApplicationHeader
+              application={application}
+              title="Documentos"
+            />
+            <p className="page-subtitle" style={{ margin: "12px 0 0" }}>
+              A lista é montada automaticamente a partir da ficha desta
+              inscrição. Formatos: <span className="mono">PDF, JPG, PNG</span>{" "}
+              · até <span className="mono">10 MB</span>.
+            </p>
+
+            <PendingRequestPanel application={application} />
+
             {status === "enviada" ? (
               <Banner tone="success" title="Inscrição enviada">
                 Sua documentação foi enviada para análise. Não é mais possível alterar os documentos.
               </Banner>
-            ) : locked ? (
-              <Banner tone="warn" title="Envios encerrados">
-                Sua inscrição já foi avaliada/encaminhada. O envio e o reenvio de documentos estão encerrados.
+            ) : !application.capabilities.uploadInitialDocuments.allowed &&
+              !application.capabilities.respondToPending.allowed ? (
+              <Banner tone="info" title="Documentos disponíveis para consulta">
+                {application.capabilities.respondToPending.reason ??
+                  application.capabilities.uploadInitialDocuments.reason ??
+                  "Nenhum envio está liberado para esta inscrição."}
               </Banner>
             ) : null}
             <div className="docs-summary">
@@ -439,17 +499,20 @@ export default function DocumentosPage() {
               </div>
             </div>
 
-            {editable && (
+            {status === "iniciada" && finalizeCapability && (
               <div className="card card-pad" style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 <div>
                   <strong style={{ fontSize: 14 }}>Finalizar inscrição</strong>
                   <div className="muted small" style={{ marginTop: 2 }}>
                     {!hasCourse
-                      ? <>Selecione o curso e o campus no <Link href="/painel">painel</Link> antes de finalizar a inscrição.</>
+                      ? "Os dados do curso desta pré-seleção estão incompletos. Procure a Secretaria de Bolsas."
                       : !allFieldsComplete
-                      ? <>Complete os campos obrigatórios da <Link href="/ficha">ficha socioeconômica</Link> ({completionIssues.length} pendência(s)) antes de finalizar.</>
+                      ? <>Complete os campos obrigatórios da <Link href={applicationRoute(application.id, "ficha")}>ficha socioeconômica</Link> ({completionIssues.length} pendência(s)) antes de finalizar.</>
                       : allRequiredSent
-                      ? "Todos os dados e documentos obrigatórios foram preenchidos. Você já pode finalizar e enviar para análise."
+                      ? finalizeCapability.allowed
+                        ? "Todos os dados e documentos obrigatórios foram preenchidos. Você já pode finalizar e enviar para análise."
+                        : finalizeCapability.reason ??
+                          "A finalização não está disponível neste momento."
                       : `Envie todos os documentos obrigatórios (${sentRequiredCount}/${data.totals.required}) para liberar a finalização.`}
                   </div>
                   {finalizeMut.isError && (
@@ -458,7 +521,7 @@ export default function DocumentosPage() {
                 </div>
                 <button
                   className="btn btn-primary"
-                  disabled={!hasCourse || !allFieldsComplete || !allRequiredSent || finalizeMut.isPending}
+                  disabled={!hasCourse || !allFieldsComplete || !allRequiredSent || !finalizeCapability.allowed || finalizeMut.isPending}
                   onClick={() => {
                     if (confirm("Após finalizar, você não poderá mais enviar ou trocar documentos. Deseja enviar a inscrição para análise?")) {
                       finalizeMut.mutate();
@@ -507,6 +570,11 @@ export default function DocumentosPage() {
                             key={it.key}
                             item={it}
                             uploaded={uploadedByKey.get(slotKey(it.typeId, it.member?.id ?? null))}
+                            capability={documentUploadCapability(
+                              application,
+                              it.typeId,
+                              it.member?.id ?? null,
+                            )}
                             onClick={() => setSelected({ ...it, group: group.title })}
                           />
                         ))}
@@ -516,13 +584,13 @@ export default function DocumentosPage() {
                 )}
               </div>
 
-              {selected && appId && (
+              {selected && appId && selectedCapability && (
                 <DocDetail
                   key={selected.key}
                   item={selected}
                   uploaded={selectedUploaded}
                   appId={appId}
-                  locked={locked}
+                  capability={selectedCapability}
                   onClose={() => setSelected(null)}
                 />
               )}
@@ -539,7 +607,27 @@ export default function DocumentosPage() {
             </div>
           </>
         )}
-      </div>
+      </main>
     </AppShell>
+  );
+}
+
+function LegacyDocumentosPage() {
+  const searchParams = useSearchParams();
+  const params = useParams<{ applicationId?: string }>();
+  return (
+    <DocumentosPageContent
+      applicationId={
+        params.applicationId ?? searchParams.get("applicationId")
+      }
+    />
+  );
+}
+
+export default function DocumentosPage() {
+  return (
+    <Suspense fallback={<div className="content muted">Carregando…</div>}>
+      <LegacyDocumentosPage />
+    </Suspense>
   );
 }

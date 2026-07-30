@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Badge, Banner } from "@/components/ui";
 import { IconCheck, IconPlus, IconSearch, IconX } from "@/components/icons";
+import { UserSchedulePermissionControl } from "@/components/user-permission-control";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { usersApi } from "@/lib/api";
 import { maskCpf } from "@/lib/format";
@@ -80,6 +81,25 @@ export default function UsuariosPage() {
     onSuccess: invalidate,
   });
 
+  const permissionMut = useMutation({
+    mutationFn: (staffUser: UserDto) => {
+      const currentlyGranted = staffUser.permissions.includes(
+        "MANAGE_SCHEDULE",
+      );
+      return usersApi.updatePermissions(staffUser.id, {
+        permissions: currentlyGranted ? [] : ["MANAGE_SCHEDULE"],
+      });
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData<UserDto[]>(["admin", "users"], (current) =>
+        current?.map((staffUser) =>
+          staffUser.id === updated.id ? updated : staffUser,
+        ),
+      );
+      void invalidate();
+    },
+  });
+
   const startEdit = (u: UserDto) => {
     setEditingId(u.id);
     setForm({ fullName: u.fullName, cpf: u.cpf, email: u.email, role: u.role, password: "" });
@@ -97,7 +117,7 @@ export default function UsuariosPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <h1 className="page-title">Usuários</h1>
-            <p className="page-subtitle">Cadastro da equipe que acessa o sistema. Defina o perfil: analista (operação) ou administrador (acesso total).</p>
+            <p className="page-subtitle">Cadastro da equipe e delegação da gestão de cronogramas. Administradores possuem acesso implícito; a permissão adicional pode ser concedida somente a analistas.</p>
           </div>
           {isAdmin && (
             <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
@@ -186,15 +206,15 @@ export default function UsuariosPage() {
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
               <table className="table">
                 <thead>
-                  <tr><th>Nome</th><th>CPF</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Cadastrado</th><th></th></tr>
+                  <tr><th>Nome</th><th>CPF</th><th>E-mail</th><th>Perfil</th><th>Gestão de cronograma</th><th>Status</th><th>Cadastrado</th><th></th></tr>
                 </thead>
                 <tbody>
                   {query.isLoading || !user ? (
-                    <tr><td colSpan={7} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
+                    <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
                   ) : query.isError ? (
-                    <tr><td colSpan={7} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar os usuários.</td></tr>
+                    <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar os usuários.</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={7} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum usuário encontrado.</td></tr>
+                    <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum usuário encontrado.</td></tr>
                   ) : (
                     rows.map((u) => {
                       const isSelf = u.id === user?.id;
@@ -204,6 +224,28 @@ export default function UsuariosPage() {
                           <td className="mono">{u.cpf}</td>
                           <td>{u.email}</td>
                           <td><Badge tone={ROLE_INFO[u.role].tone}>{ROLE_INFO[u.role].label}</Badge></td>
+                          <td>
+                            <UserSchedulePermissionControl
+                              user={u}
+                              pending={
+                                permissionMut.isPending &&
+                                permissionMut.variables?.id === u.id
+                              }
+                              onToggle={(staffUser) => {
+                                const granted = staffUser.permissions.includes(
+                                  "MANAGE_SCHEDULE",
+                                );
+                                const action = granted ? "revogar" : "conceder";
+                                if (
+                                  confirm(
+                                    `Deseja ${action} a gestão de cronogramas para ${staffUser.fullName}?`,
+                                  )
+                                ) {
+                                  permissionMut.mutate(staffUser);
+                                }
+                              }}
+                            />
+                          </td>
                           <td>{u.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Inativo</Badge>}</td>
                           <td className="muted small">{fmtWhen(u.createdAt)}</td>
                           <td>
@@ -228,7 +270,12 @@ export default function UsuariosPage() {
                 </tbody>
               </table>
               <div style={{ padding: "10px 14px", borderTop: "1px solid var(--ink-200)", background: "var(--ink-50)", color: "var(--ink-600)", fontSize: 12.5 }}>
-                {rows.length} de {all.length} usuário(s) {toggleMut.isError ? `· ${(toggleMut.error as Error).message}` : ""}
+                {rows.length} de {all.length} usuário(s){" "}
+                {toggleMut.isError
+                  ? `· ${(toggleMut.error as Error).message}`
+                  : permissionMut.isError
+                    ? `· ${(permissionMut.error as Error).message}`
+                    : ""}
               </div>
             </div>
           </>

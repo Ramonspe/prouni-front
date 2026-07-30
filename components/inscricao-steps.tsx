@@ -5,6 +5,7 @@ import { applicationsApi, socioApi } from "@/lib/api";
 import {
   housingCompletionIssues,
   studentCompletionIssues,
+  type PendingFormSection,
   type SocioFormDto,
   type SocioFormInput,
 } from "@prouni/shared";
@@ -32,17 +33,17 @@ function useSocioForm(appId: string | null) {
   const [vehicles, setVehicles] = useState<SocioFormDto["vehicles"]>([]);
   const [expenses, setExpenses] = useState<SocioFormDto["expenses"]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
-  const [seeded, setSeeded] = useState(false);
+  const [seededFor, setSeededFor] = useState<string | null>(null);
 
   useEffect(() => {
-    if (q.data && !seeded) {
+    if (q.data && appId && seededFor !== appId) {
       setForm(q.data.form);
       setVehicles(q.data.vehicles);
       setExpenses(q.data.expenses);
       setIncomes(q.data.incomes);
-      setSeeded(true);
+      setSeededFor(appId);
     }
-  }, [q.data, seeded]);
+  }, [appId, q.data, seededFor]);
 
   const save = (patch: SocioFormInput) => {
     if (!appId) return;
@@ -57,7 +58,7 @@ function useSocioForm(appId: string | null) {
     });
   };
 
-  return { loading: q.isLoading || !seeded, form, setForm, vehicles, setVehicles, expenses, setExpenses, incomes, setIncomes, save };
+  return { loading: q.isLoading || seededFor !== appId, form, setForm, vehicles, setVehicles, expenses, setExpenses, incomes, setIncomes, save };
 }
 
 /* ============ Passo: Dados do estudante ============ */
@@ -72,7 +73,11 @@ export function StepEstudante({
   showErrors?: boolean;
 }) {
   const { loading, form, setForm, save } = useSocioForm(appId);
-  const app = useQuery({ queryKey: ["app-me"], queryFn: () => applicationsApi.me(), enabled: !!appId });
+  const app = useQuery({
+    queryKey: ["application", appId],
+    queryFn: () => applicationsApi.get(appId as string),
+    enabled: !!appId,
+  });
   const set = (k: keyof Form, v: string) => setForm((p) => ({ ...p, [k]: v }));
   // Placeholder do ano/semestre vem do ciclo ativo (ex.: "2026/2"); muda sozinho a cada ciclo.
   const yearTermPlaceholder = app.data?.cycle?.label ?? "2026/2";
@@ -80,6 +85,10 @@ export function StepEstudante({
   const valid = !loading && completionIssues.length === 0;
   useEffect(() => { onValidChange?.(valid); }, [valid]); // eslint-disable-line react-hooks/exhaustive-deps
   const yearTermInvalid = showErrors && !loading && completionIssues.some((issue) => issue.field === "yearTerm");
+  const studentMobileInvalid =
+    showErrors &&
+    !loading &&
+    completionIssues.some((issue) => issue.field === "studentMobile");
 
   if (loading) return <p className="muted">Carregando…</p>;
   return (
@@ -130,6 +139,83 @@ export function StepEstudante({
           />
           <span className="field-help">Se não possuir Cadastro Único, deixe em branco.</span>
         </div>
+        <div className="field col-4">
+          <label className="field-label">
+            Telefone fixo <span className="muted small">(opcional)</span>
+          </label>
+          <input
+            className="input"
+            inputMode="numeric"
+            maxLength={16}
+            defaultValue={form.landline ?? ""}
+            onChange={(event) => {
+              event.target.value = maskPhone(event.target.value);
+            }}
+            onBlur={(event) => {
+              set("landline", event.target.value);
+              save({ landline: event.target.value });
+            }}
+          />
+        </div>
+        <div className="field col-4">
+          <label className="field-label">
+            Celular do estudante<span className="req">*</span>
+          </label>
+          <input
+            className="input"
+            inputMode="numeric"
+            maxLength={16}
+            defaultValue={form.studentMobile ?? ""}
+            aria-invalid={studentMobileInvalid}
+            style={
+              studentMobileInvalid
+                ? { borderColor: "var(--red-500)" }
+                : undefined
+            }
+            onChange={(event) => {
+              event.target.value = maskPhone(event.target.value);
+              set("studentMobile", event.target.value);
+            }}
+            onBlur={(event) => {
+              set("studentMobile", event.target.value);
+              save({ studentMobile: event.target.value });
+            }}
+          />
+        </div>
+        <div className="field col-5">
+          <label className="field-label">
+            Pai / mãe / responsável legal{" "}
+            <span className="muted small">(opcional)</span>
+          </label>
+          <input
+            className="input"
+            maxLength={120}
+            defaultValue={form.guardianName ?? ""}
+            onBlur={(event) => {
+              set("guardianName", event.target.value);
+              save({ guardianName: event.target.value });
+            }}
+          />
+        </div>
+        <div className="field col-3">
+          <label className="field-label">
+            Celular do responsável{" "}
+            <span className="muted small">(opcional)</span>
+          </label>
+          <input
+            className="input"
+            inputMode="numeric"
+            maxLength={16}
+            defaultValue={form.guardianPhone ?? ""}
+            onChange={(event) => {
+              event.target.value = maskPhone(event.target.value);
+            }}
+            onBlur={(event) => {
+              set("guardianPhone", event.target.value);
+              save({ guardianPhone: event.target.value });
+            }}
+          />
+        </div>
       </div>
 
       <div className="banner banner-info" style={{ marginTop: 18 }}>
@@ -167,10 +253,12 @@ export function StepMoradia({
   appId,
   onValidChange,
   showErrors = true,
+  editableSections,
 }: {
   appId: string | null;
   onValidChange: (v: boolean) => void;
   showErrors?: boolean;
+  editableSections?: PendingFormSection[];
 }) {
   const { loading, form, setForm, vehicles, setVehicles, save } = useSocioForm(appId);
   const setField = (patch: Partial<Form>) => setForm((p) => ({ ...p, ...patch }));
@@ -179,6 +267,16 @@ export function StepMoradia({
   const valid = !loading && completionIssues.length === 0;
   const hasIssue = (field: string) => showErrors && !loading && completionIssues.some((issue) => issue.field === field);
   const invalidStyle = (field: string) => hasIssue(field) ? { borderColor: "var(--red-500)" } : undefined;
+  const canEditHousing =
+    !editableSections || editableSections.includes("HOUSING");
+  const canEditAssets =
+    !editableSections || editableSections.includes("OTHER");
+  const fieldsetStyle = {
+    border: 0,
+    margin: 0,
+    minWidth: 0,
+    padding: 0,
+  } as const;
 
   // Controlled state for CEP-autofillable address fields
   const [cepZip, setCepZip] = useState("");
@@ -190,6 +288,10 @@ export function StepMoradia({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { onValidChange(valid); }, [valid]);
+
+  useEffect(() => {
+    setAddrSeeded(false);
+  }, [appId]);
 
   useEffect(() => {
     if (!loading && !addrSeeded) {
@@ -252,6 +354,7 @@ export function StepMoradia({
         </div>
       )}
 
+      <fieldset disabled={!canEditHousing} style={fieldsetStyle}>
       <h3 className="section-title" style={{ marginTop: 18 }}><IconHouse size={15} /> Endereço</h3>
       <div className="form-grid">
         {/* Linha 1: CEP primeiro → auto-preenche rua/bairro/cidade/estado */}
@@ -344,10 +447,6 @@ export function StepMoradia({
         </div>
         {/* Linha 3 */}
         <div className="field col-12"><label className="field-label">Ponto de referência<span className="req">*</span></label><input className="input" maxLength={200} defaultValue={form.reference ?? ""} aria-invalid={hasIssue("reference")} style={invalidStyle("reference")} onChange={(e) => setField({ reference: e.target.value })} onBlur={(e) => { setField({ reference: e.target.value }); save({ reference: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Telefone fixo <span className="muted small">(opcional)</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.landline ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ landline: e.target.value }); save({ landline: e.target.value }); }} /></div>
-        <div className="field col-4"><label className="field-label">Celular do estudante<span className="req">*</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.studentMobile ?? ""} aria-invalid={hasIssue("studentMobile")} style={invalidStyle("studentMobile")} onChange={(e) => { e.target.value = maskPhone(e.target.value); setField({ studentMobile: e.target.value }); }} onBlur={(e) => { setField({ studentMobile: e.target.value }); save({ studentMobile: e.target.value }); }} /></div>
-        <div className="field col-5"><label className="field-label">Pai / mãe / responsável legal <span className="muted small">(opcional)</span></label><input className="input" maxLength={120} defaultValue={form.guardianName ?? ""} onBlur={(e) => { setField({ guardianName: e.target.value }); save({ guardianName: e.target.value }); }} /></div>
-        <div className="field col-3"><label className="field-label">Celular do responsável <span className="muted small">(opcional)</span></label><input className="input" inputMode="numeric" maxLength={16} defaultValue={form.guardianPhone ?? ""} onChange={(e) => { e.target.value = maskPhone(e.target.value); }} onBlur={(e) => { setField({ guardianPhone: e.target.value }); save({ guardianPhone: e.target.value }); }} /></div>
       </div>
 
       <div className="divider" />
@@ -394,9 +493,11 @@ export function StepMoradia({
           <div className="field col-8"><label className="field-label">Cedido por (nome e parentesco do coproprietário)<span className="req">*</span></label><input className="input" maxLength={150} defaultValue={form.cededOwnerInfo ?? ""} aria-invalid={hasIssue("cededOwnerInfo")} style={invalidStyle("cededOwnerInfo")} onChange={(e) => setField({ cededOwnerInfo: e.target.value })} onBlur={(e) => { setField({ cededOwnerInfo: e.target.value }); save({ cededOwnerInfo: e.target.value }); }} /></div>
         )}
       </div>
+      </fieldset>
 
       <div className="divider" />
 
+      <fieldset disabled={!canEditAssets} style={fieldsetStyle}>
       <h3 className="section-title"><IconCar size={15} /> Veículos e bens</h3>
       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-900)", margin: "8px 0" }}>Possui veículo ou moto?</div>
       <div style={{ display: "flex", gap: 18, marginBottom: 12 }}>
@@ -431,6 +532,7 @@ export function StepMoradia({
         <label className="radio"><input type="radio" name="bens" checked={form.hasUndeclaredAssets === true} onChange={() => { setField({ hasUndeclaredAssets: true }); save({ hasUndeclaredAssets: true }); }} /><span className="dot" /> Sim</label>
         <label className="radio"><input type="radio" name="bens" checked={form.hasUndeclaredAssets === false} onChange={() => { setField({ hasUndeclaredAssets: false }); save({ hasUndeclaredAssets: false }); }} /><span className="dot" /> Não</label>
       </div>
+      </fieldset>
     </>
   );
 }

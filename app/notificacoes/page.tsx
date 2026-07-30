@@ -1,158 +1,331 @@
 "use client";
-import { useMemo } from "react";
+
+import { Suspense, useMemo } from "react";
 import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AppShell } from "@/components/app-shell";
-import { Badge, Banner } from "@/components/ui";
-import { IconBell, IconCheck, IconFile, IconInfo } from "@/components/icons";
-import { useRequireAuth } from "@/lib/use-require-auth";
-import { applicationsApi, documentsApi } from "@/lib/api";
-import { formatDateTimeBR } from "@/lib/format";
 import type { BadgeTone } from "@prouni/shared";
+import { AppShell } from "@/components/app-shell";
+import {
+  CandidateApplicationHeader,
+  CandidateApplicationSelectionMessage,
+} from "@/components/candidate-application-context";
+import { PendingRequestPanel } from "@/components/pending-request-panel";
+import { Badge, Banner } from "@/components/ui";
+import {
+  IconBell,
+  IconCheck,
+  IconFile,
+  IconInfo,
+} from "@/components/icons";
+import {
+  applicationsApi,
+  documentsApi,
+  pendingRequestsApi,
+} from "@/lib/api";
+import { applicationRoute } from "@/lib/application-context";
+import { formatDateTimeBR } from "@/lib/format";
+import { useCandidateApplication } from "@/lib/use-candidate-application";
+import { useRequireAuth } from "@/lib/use-require-auth";
 
 type Notice = {
   id: string;
-  kind: "pendencia" | "parecer" | "status" | "info";
+  kind: "pendencia" | "status";
   title: string;
   body?: string | null;
-  when: string; // ISO
+  when: string;
   tone: BadgeTone;
   tag: string;
+  href?: string;
 };
 
-/** Tom/rótulo do evento conforme o status de destino. */
-function eventTone(toStatus: string | null): { tone: BadgeTone; tag: string; kind: Notice["kind"] } {
-  switch (toStatus) {
-    case "pendencia":
-      return { tone: "warning", tag: "Pendência", kind: "pendencia" };
-    case "analise_concluida":
-      return { tone: "info", tag: "Análise", kind: "status" };
-    case "classificado":
-    case "concedida":
-      return { tone: "success", tag: "Resultado", kind: "parecer" };
-    case "indeferido":
-      return { tone: "danger", tag: "Resultado", kind: "parecer" };
-    case "espera":
-      return { tone: "info", tag: "Resultado", kind: "parecer" };
-    default:
-      return { tone: "neutral", tag: "Atualização", kind: "status" };
+function eventTone(toStatus: string | null): {
+  tone: BadgeTone;
+  tag: string;
+  kind: Notice["kind"];
+} {
+  if (toStatus === "pendencia") {
+    return { tone: "warning", tag: "Pendência", kind: "pendencia" };
   }
+  return { tone: "neutral", tag: "Atualização", kind: "status" };
 }
 
-export default function NotificacoesPage() {
+function NotificacoesPageContent({
+  applicationId,
+}: {
+  applicationId?: string | null;
+}) {
   const { user, loading } = useRequireAuth();
-  const app = useQuery({ queryKey: ["application", "me"], queryFn: applicationsApi.me, enabled: !!user });
-  const appId = app.data?.id;
+  const applicationQuery = useCandidateApplication(
+    applicationId,
+    Boolean(user),
+  );
+  const application = applicationQuery.application;
+  const appId = application?.id;
 
   const events = useQuery({
     queryKey: ["application", appId, "events"],
     queryFn: () => applicationsApi.events(appId!),
-    enabled: !!appId,
+    enabled: Boolean(appId),
   });
   const uploaded = useQuery({
     queryKey: ["application", appId, "documents"],
     queryFn: () => documentsApi.list(appId!),
-    enabled: !!appId,
+    enabled: Boolean(appId),
   });
   const required = useQuery({
     queryKey: ["application", appId, "required-documents"],
     queryFn: () => applicationsApi.requiredDocuments(appId!),
-    enabled: !!appId,
+    enabled: Boolean(appId),
+  });
+  const pendingRequests = useQuery({
+    queryKey: ["pending-requests", appId],
+    queryFn: () => pendingRequestsApi.list(appId!),
+    enabled: Boolean(appId),
   });
 
-  const docName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const cat of required.data?.categories ?? []) for (const it of cat.items) m.set(it.typeId, it.name);
-    return m;
+  const documentNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const category of required.data?.categories ?? []) {
+      for (const item of category.items) names.set(item.typeId, item.name);
+    }
+    return names;
   }, [required.data]);
 
   const notices = useMemo<Notice[]>(() => {
+    if (!application) return [];
     const list: Notice[] = [];
-    // Pendências de documentos reprovados (precisam de reenvio)
-    for (const u of uploaded.data ?? []) {
-      if (u.status === "REPROVADO") {
-        list.push({
-          id: `doc-${u.documentTypeId}-${u.familyMemberId ?? "app"}`,
-          kind: "pendencia",
-          title: `Documento reprovado: ${docName.get(u.documentTypeId) ?? "documento"}`,
-          body: u.reviewComment || "Reenvie o documento corrigido na página de Documentos.",
-          when: u.reviewedAt ?? app.data?.updatedAt ?? new Date(0).toISOString(),
-          tone: "danger",
-          tag: "Pendência",
-        });
-      }
-    }
-    // Eventos da inscrição (mudanças de status). O RESULTADO (classificado, lista
-    // de espera, indeferido, concedida) NÃO é exibido ao candidato: a divulgação é
-    // feita pelo MEC no portal do Prouni.
-    const RESULT_STATUSES = ["classificado", "espera", "indeferido", "concedida"];
-    for (const e of events.data ?? []) {
-      if (e.toStatus && RESULT_STATUSES.includes(e.toStatus)) continue;
-      const { tone, tag, kind } = eventTone(e.toStatus);
-      list.push({ id: `ev-${e.id}`, kind, title: e.title, body: e.body, when: e.createdAt, tone, tag });
-    }
-    return list.sort((a, b) => +new Date(b.when) - +new Date(a.when));
-  }, [uploaded.data, events.data, docName, app.data]);
 
-  const isLoading = loading || app.isLoading || events.isLoading;
+    for (const request of pendingRequests.data ?? []) {
+      const isOpen = request.status === "OPEN";
+      list.push({
+        id: `pending-${request.id}`,
+        kind: "pendencia",
+        title: isOpen
+          ? "Correção solicitada pela equipe"
+          : "Correção enviada para nova análise",
+        body: `${request.reason} · ${request.items.length} item(ns) nesta solicitação.`,
+        when: request.submittedAt ?? request.createdAt,
+        tone: isOpen ? "warning" : "info",
+        tag: isOpen ? "Ação necessária" : "Pendência respondida",
+        href: isOpen
+          ? applicationRoute(
+              application.id,
+              request.items.some((item) => item.kind === "DOCUMENT")
+                ? "documentos"
+                : "ficha",
+            )
+          : applicationRoute(application.id, "acompanhamento"),
+      });
+    }
+
+    for (const document of uploaded.data ?? []) {
+      if (document.status !== "REPROVADO") continue;
+      list.push({
+        id: `doc-${document.documentTypeId}-${document.familyMemberId ?? "app"}`,
+        kind: "pendencia",
+        title: `Documento sinalizado: ${
+          documentNames.get(document.documentTypeId) ?? "documento"
+        }`,
+        body:
+          document.reviewComment ??
+          "Consulte a solicitação da equipe antes de reenviar.",
+        when:
+          document.reviewedAt ??
+          application.updatedAt,
+        tone: "danger",
+        tag: "Documento",
+        href: applicationRoute(application.id, "documentos"),
+      });
+    }
+
+    const resultStatuses = new Set([
+      "classificado",
+      "espera",
+      "indeferido",
+      "concedida",
+    ]);
+    for (const event of events.data ?? []) {
+      if (event.toStatus && resultStatuses.has(event.toStatus)) continue;
+      const { tone, tag, kind } = eventTone(event.toStatus);
+      list.push({
+        id: `event-${event.id}`,
+        kind,
+        title: event.title,
+        body: event.body,
+        when: event.createdAt,
+        tone,
+        tag,
+        href: applicationRoute(application.id, "acompanhamento"),
+      });
+    }
+
+    return list.sort(
+      (left, right) =>
+        new Date(right.when).getTime() - new Date(left.when).getTime(),
+    );
+  }, [
+    application,
+    documentNames,
+    events.data,
+    pendingRequests.data,
+    uploaded.data,
+  ]);
+
+  const noticesLoading =
+    events.isLoading || uploaded.isLoading || pendingRequests.isLoading;
 
   return (
     <AppShell role="candidate" crumbs={["PROUNI", "Notificações"]}>
-      <div className="content fade-in">
-        <div style={{ marginBottom: 16 }}>
-          <h1 className="page-title">Notificações</h1>
-          <p className="page-subtitle">Avisos sobre a sua inscrição: pendências de documentos, pareceres e mudanças de status.</p>
-        </div>
-
-        {isLoading ? (
+      <main className="content fade-in">
+        {loading || applicationQuery.isLoading ? (
           <div className="card card-pad muted">Carregando notificações…</div>
-        ) : !appId ? (
-          <Banner tone="info" title="Sem inscrição ativa">
-            Você ainda não possui uma inscrição neste ciclo. Comece pela{" "}
-            <Link href="/inscricao">página de inscrição</Link>.
+        ) : applicationQuery.isError ? (
+          <Banner tone="warn" title="Não foi possível carregar a inscrição">
+            Atualize a página e tente novamente.
           </Banner>
-        ) : notices.length === 0 ? (
-          <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--ink-600)" }}>
-            <IconCheck size={18} /> Nenhuma notificação no momento. Você será avisado aqui sobre pendências e o resultado da análise.
-          </div>
+        ) : applicationQuery.notFound ||
+          applicationQuery.requiresSelection ? (
+          <CandidateApplicationSelectionMessage
+            notFound={applicationQuery.notFound}
+          />
+        ) : !application ? (
+          <Banner tone="info" title="Nenhuma inscrição iniciada">
+            Consulte no <Link href="/painel">painel</Link> se há uma nova
+            pré-seleção disponível.
+          </Banner>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {notices.map((n) => (
-              <div key={n.id} className="card" style={{ padding: 14, display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div
-                  style={{
-                    width: 34, height: 34, borderRadius: 9, display: "grid", placeItems: "center", flexShrink: 0,
-                    background: "var(--ink-100)", color: "var(--ink-700)",
-                  }}
-                >
-                  {n.kind === "pendencia" ? <IconFile size={16} /> : <IconBell size={16} />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <Badge tone={n.tone}>{n.tag}</Badge>
-                    <span style={{ fontWeight: 600, color: "var(--ink-900)", fontSize: 13.5 }}>{n.title}</span>
-                  </div>
-                  {n.body && <div className="muted small" style={{ marginTop: 4 }}>{n.body}</div>}
-                  <div className="muted small" style={{ marginTop: 6 }}>{formatDateTimeBR(n.when)}</div>
-                  {n.kind === "pendencia" && (
-                    <Link href="/documentos" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}>
-                      Resolver na página de Documentos
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          <>
+            <CandidateApplicationHeader
+              application={application}
+              title="Notificações"
+            />
+            <p className="page-subtitle" style={{ margin: "12px 0 18px" }}>
+              Avisos exclusivos deste protocolo. Pendências e movimentações de
+              outras chamadas ficam em suas respectivas inscrições.
+            </p>
 
-        <div className="banner banner-info" style={{ marginTop: 16 }}>
-          <IconInfo className="banner-icon" />
-          <div className="banner-body">
-            <div className="banner-title">Acompanhe também por e-mail</div>
-            Avisos importantes também são enviados para o e-mail cadastrado. Verifique a caixa de spam.
-          </div>
-        </div>
-      </div>
+            <PendingRequestPanel application={application} showSubmit={false} />
+
+            {noticesLoading ? (
+              <div className="card card-pad muted">Carregando avisos…</div>
+            ) : notices.length === 0 ? (
+              <div
+                className="card card-pad"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  color: "var(--ink-600)",
+                }}
+              >
+                <IconCheck size={18} /> Nenhuma notificação para esta inscrição.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {notices.map((notice) => (
+                  <article
+                    key={notice.id}
+                    className="card"
+                    style={{
+                      padding: 14,
+                      display: "flex",
+                      gap: 12,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 9,
+                        display: "grid",
+                        placeItems: "center",
+                        flexShrink: 0,
+                        background: "var(--ink-100)",
+                        color: "var(--ink-700)",
+                      }}
+                    >
+                      {notice.kind === "pendencia" ? (
+                        <IconFile size={16} />
+                      ) : (
+                        <IconBell size={16} />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <Badge tone={notice.tone}>{notice.tag}</Badge>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: "var(--ink-900)",
+                            fontSize: 13.5,
+                          }}
+                        >
+                          {notice.title}
+                        </span>
+                      </div>
+                      {notice.body && (
+                        <div className="muted small" style={{ marginTop: 4 }}>
+                          {notice.body}
+                        </div>
+                      )}
+                      <div className="muted small" style={{ marginTop: 6 }}>
+                        {formatDateTimeBR(notice.when)}
+                      </div>
+                      {notice.href && (
+                        <Link
+                          href={notice.href}
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 8 }}
+                        >
+                          Abrir esta inscrição
+                        </Link>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <div className="banner banner-info" style={{ marginTop: 16 }}>
+              <IconInfo className="banner-icon" />
+              <div className="banner-body">
+                <div className="banner-title">Acompanhe também por e-mail</div>
+                Avisos importantes também são enviados para o e-mail
+                cadastrado. Verifique a caixa de spam.
+              </div>
+            </div>
+          </>
+        )}
+      </main>
     </AppShell>
+  );
+}
+
+function LegacyNotificacoesPage() {
+  const searchParams = useSearchParams();
+  const params = useParams<{ applicationId?: string }>();
+  return (
+    <NotificacoesPageContent
+      applicationId={
+        params.applicationId ?? searchParams.get("applicationId")
+      }
+    />
+  );
+}
+
+export default function NotificacoesPage() {
+  return (
+    <Suspense fallback={<div className="content muted">Carregando…</div>}>
+      <LegacyNotificacoesPage />
+    </Suspense>
   );
 }

@@ -3,10 +3,12 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
+import { ProcessContextSelector } from "@/components/process-context-selector";
 import { Avatar, PriorityBadge, StatusBadge } from "@/components/ui";
 import { IconChevR } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
+import { useAdminProcessContext } from "@/lib/use-admin-process-context";
 import { STATUS_MAP, type AdminApplicationRow, type BadgeTone, type ProcessStatus } from "@prouni/shared";
 
 const STAGES: ProcessStatus[] = [
@@ -35,11 +37,21 @@ function fmtWhen(iso: string): string {
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, loading } = useRequireStaff();
+  const processContext = useAdminProcessContext(Boolean(user));
 
   const query = useQuery({
-    queryKey: ["admin", "applications"],
-    queryFn: () => adminApi.applications(),
-    enabled: !!user,
+    queryKey: [
+      "admin",
+      "applications",
+      processContext.cycleId,
+      processContext.callId,
+    ],
+    queryFn: () =>
+      adminApi.applications({
+        cycleId: processContext.cycleId,
+        callId: processContext.callId,
+      }),
+    enabled: Boolean(user && processContext.cycleId),
   });
   const rows = useMemo(() => query.data ?? [], [query.data]);
 
@@ -66,9 +78,22 @@ export default function AdminDashboardPage() {
         <div style={{ marginBottom: 18 }}>
           <h1 className="page-title">Painel operacional</h1>
           <p className="page-subtitle">
-            Visão geral do processo PROUNI · {rows.length} inscriç{rows.length === 1 ? "ão" : "ões"} no ciclo ativo.
+            Visão geral do contexto selecionado · {rows.length} inscriç{rows.length === 1 ? "ão" : "ões"}.
           </p>
         </div>
+
+        {processContext.cycleOptions.length > 0 && (
+          <ProcessContextSelector
+            cycles={processContext.cycleOptions}
+            calls={processContext.callOptions}
+            cycleId={processContext.cycleId}
+            callId={processContext.callId}
+            onCycleChange={processContext.setCycleId}
+            onCallChange={processContext.setCallId}
+            disabled={processContext.isLoading}
+            helperText="O painel, a fila e os totais abaixo usam exatamente este contexto."
+          />
+        )}
 
         <div className="grid-4" style={{ marginBottom: 18 }}>
           <div className="stat">
@@ -89,7 +114,7 @@ export default function AdminDashboardPage() {
           <div className="stat">
             <div className="stat-label">Total de inscrições</div>
             <div className="stat-value">{rows.length}</div>
-            <div className="stat-trend flat">Ciclo ativo</div>
+            <div className="stat-trend flat">Contexto selecionado</div>
           </div>
         </div>
 
@@ -124,10 +149,10 @@ export default function AdminDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {loading || query.isLoading ? (
+              {loading || processContext.isLoading || query.isLoading ? (
                 <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
               ) : queue.length === 0 ? (
-                <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhuma inscrição no ciclo ativo.</td></tr>
+                <tr><td colSpan={8} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhuma inscrição neste contexto.</td></tr>
               ) : (
                 queue.map((c: AdminApplicationRow) => (
                   <tr key={c.id} onClick={() => router.push(`/admin/analise/${c.id}`)}>

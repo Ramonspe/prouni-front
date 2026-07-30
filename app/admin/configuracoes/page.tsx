@@ -3,21 +3,70 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { ProcessContextSelector } from "@/components/process-context-selector";
 import { Badge, Banner } from "@/components/ui";
-import { IconCheck, IconLock, IconPlus, IconRefresh, IconSearch, IconTrash, IconUpload, IconUser, IconX } from "@/components/icons";
+import {
+  IconCheck,
+  IconLock,
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+  IconTrash,
+  IconUpload,
+  IconUser,
+  IconX,
+} from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { authApi, coursesApi, preselectionApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { maskCpf } from "@/lib/format";
-import { PRESELECTION_CALLS, type PreselectionCall, type PreselectionEntryDto, type PreselectionImportResult, type PreselectionInput } from "@prouni/shared";
+import { useAdminProcessContext } from "@/lib/use-admin-process-context";
+import {
+  PRESELECTION_CALLS,
+  type PreselectionCall,
+  type PreselectionEntryDto,
+  type PreselectionImportResult,
+  type PreselectionInput,
+  type SelectionCallSummaryDto,
+} from "@prouni/shared";
 
-const EMPTY: PreselectionInput = { cpf: "", fullName: "", courseHint: "", campusHint: "", enemRegistration: "", call: "PRIMEIRA" };
+const EMPTY: PreselectionInput = {
+  cpf: "",
+  fullName: "",
+  courseHint: "",
+  campusHint: "",
+  enemRegistration: "",
+  call: "PRIMEIRA",
+};
 
 function fmtWhen(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 function callLabel(c: PreselectionCall): string {
   return PRESELECTION_CALLS.find((x) => x.value === c)?.label ?? c;
+}
+function legacyCallForKind(
+  kind: SelectionCallSummaryDto["kind"],
+): PreselectionCall {
+  if (kind === "SECOND_CALL") return "SEGUNDA";
+  if (kind === "WAITLIST") return "ESPERA";
+  if (kind === "FIRST_CALL") return "PRIMEIRA";
+  return "ESPERA";
+}
+function entryState(
+  entry: PreselectionEntryDto,
+): NonNullable<PreselectionEntryDto["state"]> {
+  return entry.state ?? (entry.claimed ? "CLAIMED" : "AVAILABLE");
+}
+function EntryStateBadge({ entry }: { entry: PreselectionEntryDto }) {
+  const state = entryState(entry);
+  if (state === "CANCELLED") return <Badge tone="danger">Cancelado</Badge>;
+  if (state === "CLAIMED") return <Badge tone="success">Reivindicado</Badge>;
+  return <Badge tone="neutral">Disponível</Badge>;
 }
 
 export default function ConfiguracoesPage() {
@@ -27,53 +76,114 @@ export default function ConfiguracoesPage() {
   const qc = useQueryClient();
   const isAdmin = user?.role === "ADMIN";
   const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
+  const processContext = useAdminProcessContext(!!user);
 
   const [search, setSearch] = useState("");
-  const [callFilter, setCallFilter] = useState("all");
-  const [importCall, setImportCall] = useState<PreselectionCall>("PRIMEIRA");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PreselectionInput>(EMPTY);
-  const [importResult, setImportResult] = useState<PreselectionImportResult | null>(null);
+  const [importResult, setImportResult] =
+    useState<PreselectionImportResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const query = useQuery({
-    queryKey: ["admin", "preselection", callFilter],
-    queryFn: () => preselectionApi.list(undefined, callFilter),
-    enabled: !!user,
+    queryKey: [
+      "admin",
+      "preselection",
+      processContext.cycleId,
+      processContext.callId,
+    ],
+    queryFn: () =>
+      preselectionApi.list(
+        undefined,
+        undefined,
+        processContext.cycleId,
+        processContext.callId,
+      ),
+    enabled: !!user && !!processContext.cycleId,
   });
   const all = useMemo(() => query.data ?? [], [query.data]);
   const rows = all.filter((e) => {
     const s = search.trim().toLowerCase();
     if (!s) return true;
-    return e.cpf.replace(/\D/g, "").includes(s.replace(/\D/g, "")) || (e.fullName ?? "").toLowerCase().includes(s);
+    const digits = s.replace(/\D/g, "");
+    return (
+      (!!digits && e.cpf.replace(/\D/g, "").includes(digits)) ||
+      (e.fullName ?? "").toLowerCase().includes(s)
+    );
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "preselection"] });
-  const resetForm = () => { setShowForm(false); setEditingId(null); setForm(EMPTY); };
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ["admin", "preselection"] });
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY);
+  };
 
-  const saveMut = useMutation({
-    mutationFn: () => (editingId ? preselectionApi.update(editingId, form) : preselectionApi.create(form)),
-    onSuccess: () => { invalidate(); resetForm(); },
-  });
-  const removeMut = useMutation({
-    mutationFn: (id: string) => preselectionApi.remove(id),
-    onSuccess: invalidate,
-  });
-  const importMut = useMutation({
-    mutationFn: (vars: { file: File; call: string }) => preselectionApi.import(vars.file, vars.call),
-    onSuccess: (r) => { setImportResult(r); invalidate(); if (fileRef.current) fileRef.current.value = ""; },
-  });
   // Campi e cursos reais para as listas suspensas do cadastro (evita digitar
   // nome de curso que não casa — ex.: "Engenharia da/de Computação").
-  const campusesQuery = useQuery({ queryKey: ["campuses"], queryFn: () => coursesApi.campuses(), enabled: !!user });
+  const campusesQuery = useQuery({
+    queryKey: ["campuses"],
+    queryFn: () => coursesApi.campuses(),
+    enabled: !!user,
+  });
   const coursesQuery = useQuery({
     queryKey: ["courses", form.campusHint],
     queryFn: () => coursesApi.courses(form.campusHint || undefined),
     enabled: !!user && !!form.campusHint,
   });
+  const selectedFormCall =
+    processContext.calls.find((call) => call.id === form.callId) ?? null;
+  const selectedFormCourse =
+    (coursesQuery.data ?? []).find((course) => course.id === form.courseId) ??
+    null;
+  const canSave =
+    !!form.cpf.trim() && !!selectedFormCall && !!selectedFormCourse;
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      if (!selectedFormCall || !selectedFormCourse) {
+        throw new Error("Selecione uma chamada e um curso canônicos.");
+      }
+      const body: PreselectionInput = {
+        ...form,
+        cycleId: selectedFormCall.cycle.id,
+        callId: selectedFormCall.id,
+        courseId: selectedFormCourse.id,
+        call: legacyCallForKind(selectedFormCall.kind),
+        courseHint: selectedFormCourse.name,
+        campusHint: selectedFormCourse.campus.code,
+      };
+      return editingId
+        ? preselectionApi.update(editingId, body)
+        : preselectionApi.create(body);
+    },
+    onSuccess: () => {
+      invalidate();
+      resetForm();
+    },
+  });
+  const removeMut = useMutation({
+    mutationFn: (vars: { id: string; reason: string }) =>
+      preselectionApi.remove(vars.id, vars.reason),
+    onSuccess: invalidate,
+  });
+  const importMut = useMutation({
+    mutationFn: (vars: {
+      file: File;
+      call: PreselectionCall;
+      callId: string;
+    }) => preselectionApi.import(vars.file, vars.call, vars.callId),
+    onSuccess: (r) => {
+      setImportResult(r);
+      invalidate();
+      if (fileRef.current) fileRef.current.value = "";
+    },
+  });
   const resetPasswordMut = useMutation({
-    mutationFn: (vars: { candidateId: string; password: string }) => authApi.resetCandidatePassword(vars.candidateId, vars.password),
+    mutationFn: (vars: { candidateId: string; password: string }) =>
+      authApi.resetCandidatePassword(vars.candidateId, vars.password),
   });
   const impersonateMut = useMutation({
     mutationFn: (candidateId: string) => authApi.impersonate(candidateId),
@@ -83,91 +193,250 @@ export default function ConfiguracoesPage() {
     },
   });
 
-  const set = (k: keyof PreselectionInput) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
-  const startEdit = (e: PreselectionEntryDto) => {
-    setEditingId(e.id);
-    setForm({ cpf: e.cpf, fullName: e.fullName ?? "", courseHint: e.courseHint ?? "", campusHint: e.campusHint ?? "", enemRegistration: e.enemRegistration ?? "", call: e.call });
+  const set =
+    (k: keyof PreselectionInput) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+  const startCreate = () => {
+    const call = processContext.selectedCall;
+    if (!call) return;
+    setEditingId(null);
+    setForm({
+      ...EMPTY,
+      cycleId: call.cycle.id,
+      callId: call.id,
+      call: legacyCallForKind(call.kind),
+    });
     setShowForm(true);
+  };
+  const startEdit = (e: PreselectionEntryDto) => {
+    if (entryState(e) !== "AVAILABLE") return;
+    setEditingId(e.id);
+    setForm({
+      cpf: e.cpf,
+      fullName: e.fullName ?? "",
+      courseHint: e.course?.name ?? e.courseHint ?? "",
+      campusHint: e.course?.campus.code ?? e.campusHint ?? "",
+      enemRegistration: e.enemRegistration ?? "",
+      call: e.call,
+      cycleId: e.cycle?.id ?? processContext.cycleId,
+      callId: e.selectionCall?.id,
+      courseId: e.course?.id,
+    });
+    setShowForm(true);
+  };
+  const cancelEntry = (entry: PreselectionEntryDto) => {
+    if (entryState(entry) !== "AVAILABLE") return;
+    const reason = window.prompt(
+      `Informe o motivo do cancelamento de ${entry.fullName ?? entry.cpf}.`,
+    );
+    if (!reason?.trim()) return;
+    if (
+      window.confirm(
+        `Cancelar esta oportunidade ainda não iniciada?\n\nMotivo: ${reason.trim()}`,
+      )
+    ) {
+      removeMut.mutate({ id: entry.id, reason: reason.trim() });
+    }
+  };
+  const changeCycle = (cycleId: string) => {
+    resetForm();
+    setImportResult(null);
+    processContext.setCycleId(cycleId);
+  };
+  const changeCall = (callId: string) => {
+    resetForm();
+    setImportResult(null);
+    processContext.setCallId(callId);
   };
   const resetCandidatePassword = (e: PreselectionEntryDto) => {
     if (!e.candidateUserId) return;
-    const password = window.prompt(`Defina a nova senha de ${e.fullName ?? e.cpf}.`);
+    const password = window.prompt(
+      `Defina a nova senha de ${e.fullName ?? e.cpf}.`,
+    );
     if (!password) return;
-    if (!window.confirm("A senha atual do candidato será substituída e todas as sessões dele serão encerradas. Continuar?")) return;
+    if (
+      !window.confirm(
+        "A senha atual do candidato será substituída e todas as sessões dele serão encerradas. Continuar?",
+      )
+    )
+      return;
     resetPasswordMut.mutate({ candidateId: e.candidateUserId, password });
   };
   const impersonateCandidate = (e: PreselectionEntryDto) => {
     if (!e.candidateUserId) return;
-    if (window.confirm(`Agir como ${e.fullName ?? e.cpf}? Você poderá voltar ao modo administrador a qualquer momento.`)) {
+    if (
+      window.confirm(
+        `Agir como ${e.fullName ?? e.cpf}? Você poderá voltar ao modo administrador a qualquer momento.`,
+      )
+    ) {
       impersonateMut.mutate(e.candidateUserId);
     }
   };
 
   return (
-    <AppShell role="admin" crumbs={["PROUNI · Admin", "Configurações", "Pré-selecionados"]}>
+    <AppShell
+      role="admin"
+      crumbs={["PROUNI · Admin", "Configurações", "Pré-selecionados"]}
+    >
       <div className="content fade-in">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 14,
+          }}
+        >
           <div>
             <h1 className="page-title">Pré-selecionados</h1>
-            <p className="page-subtitle">Cadastro e importação dos candidatos pré-selecionados (MEC ou adesão institucional) do ciclo ativo.</p>
+            <p className="page-subtitle">
+              Cadastro e importação de candidatos no ciclo e na chamada
+              selecionados.
+            </p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {canRefresh && <button className="btn btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}><IconRefresh size={14} /> {query.isFetching ? "Atualizando…" : "Atualizar"}</button>}
+            {canRefresh && (
+              <button
+                className="btn btn-ghost"
+                onClick={() => query.refetch()}
+                disabled={query.isFetching}
+              >
+                <IconRefresh size={14} />{" "}
+                {query.isFetching ? "Atualizando…" : "Atualizar"}
+              </button>
+            )}
             {isAdmin && (
-              <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
+              <button
+                className="btn btn-primary"
+                disabled={!processContext.selectedCall}
+                title={
+                  processContext.selectedCall
+                    ? "Cadastrar candidato nesta chamada"
+                    : "Selecione uma chamada específica"
+                }
+                onClick={startCreate}
+              >
                 <IconPlus size={14} /> Novo pré-selecionado
               </button>
             )}
           </div>
         </div>
 
+        <ProcessContextSelector
+          cycles={processContext.cycleOptions}
+          calls={processContext.callOptions}
+          cycleId={processContext.cycleId}
+          callId={processContext.callId}
+          onCycleChange={changeCycle}
+          onCallChange={changeCall}
+          legend="Ciclo e chamada dos pré-selecionados"
+          helperText="A lista, o cadastro e a importação respeitam este contexto."
+          disabled={processContext.isLoading}
+        />
+        {processContext.isError && (
+          <Banner tone="danger" title="Não foi possível carregar o contexto">
+            Atualize a página ou tente novamente em instantes.
+          </Banner>
+        )}
+
         {!isAdmin && (
           <Banner tone="info" title="Acesso somente leitura">
-            Seu perfil pode consultar a lista. O cadastro, edição, exclusão e importação de pré-selecionados são feitos por administradores.
+            Seu perfil pode consultar a lista. Cadastro, edição, cancelamento e
+            importação são feitos por administradores.
           </Banner>
         )}
 
         {/* Importação */}
         {isAdmin && (
           <div className="card" style={{ marginBottom: 14 }}>
-            <div className="card-header"><h3 className="h-card-title">Importar planilha (CSV ou Excel)</h3></div>
+            <div className="card-header">
+              <h3 className="h-card-title">Importar planilha (CSV ou Excel)</h3>
+            </div>
             <div className="card-body">
               <p className="muted small" style={{ marginBottom: 10 }}>
-                A planilha deve ter um cabeçalho com a coluna <strong>CPF</strong> (obrigatória) e, opcionalmente,
-                <span className="mono"> Nome</span>, <span className="mono">Curso</span>, <span className="mono">Campus</span> e <span className="mono">ENEM</span>.
-                CPFs já existentes são atualizados; inválidos são ignorados.
+                A planilha deve conter <strong>CPF</strong> e{" "}
+                <strong>Curso</strong>. Informe <strong>Campus</strong> quando o
+                mesmo curso existir em mais de uma unidade. Nome e ENEM são
+                opcionais; conflitos são apresentados por linha sem sobrescrever
+                oportunidades reivindicadas.
               </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <div className="field" style={{ margin: 0, minWidth: 170 }}>
-                  <label className="field-label" style={{ marginBottom: 4 }}>Chamada da lista</label>
-                  <select className="input" value={importCall} onChange={(e) => setImportCall(e.target.value as PreselectionCall)}>
-                    {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="input" style={{ maxWidth: 320, alignSelf: "flex-end" }} />
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="input"
+                  style={{ maxWidth: 320, alignSelf: "flex-end" }}
+                />
                 <button
                   className="btn btn-secondary"
                   style={{ alignSelf: "flex-end" }}
-                  disabled={importMut.isPending}
-                  onClick={() => { const f = fileRef.current?.files?.[0]; if (f) { setImportResult(null); importMut.mutate({ file: f, call: importCall }); } }}
+                  disabled={importMut.isPending || !processContext.selectedCall}
+                  title={
+                    processContext.selectedCall
+                      ? "Importar para a chamada selecionada"
+                      : "Selecione uma chamada específica"
+                  }
+                  onClick={() => {
+                    const file = fileRef.current?.files?.[0];
+                    const call = processContext.selectedCall;
+                    if (file && call) {
+                      setImportResult(null);
+                      importMut.mutate({
+                        file,
+                        call: legacyCallForKind(call.kind),
+                        callId: call.id,
+                      });
+                    }
+                  }}
                 >
-                  <IconUpload size={14} /> {importMut.isPending ? "Importando…" : "Importar"}
+                  <IconUpload size={14} />{" "}
+                  {importMut.isPending ? "Importando…" : "Importar"}
                 </button>
               </div>
               <p className="muted small" style={{ marginTop: 8 }}>
-                Todos os registros desta planilha serão marcados como <strong>{callLabel(importCall)}</strong>.
+                {processContext.selectedCall ? (
+                  <>
+                    Destino:{" "}
+                    <strong>{processContext.selectedCycle?.label}</strong> /{" "}
+                    <strong>{processContext.selectedCall.name}</strong>.
+                  </>
+                ) : (
+                  <strong>
+                    Selecione uma chamada específica no contexto acima.
+                  </strong>
+                )}
               </p>
-              {importMut.isError && <p className="upload-meta error" style={{ marginTop: 8 }}>{(importMut.error as Error).message}</p>}
+              {importMut.isError && (
+                <p className="upload-meta error" style={{ marginTop: 8 }}>
+                  {(importMut.error as Error).message}
+                </p>
+              )}
               {importResult && (
                 <div style={{ marginTop: 12 }}>
-                  <Banner tone={importResult.errors.length ? "warn" : "success"} title="Importação concluída">
-                    {importResult.created} criado(s) · {importResult.updated} atualizado(s) · {importResult.skipped} ignorado(s).
+                  <Banner
+                    tone={importResult.errors.length ? "warn" : "success"}
+                    title="Importação concluída"
+                  >
+                    {importResult.created} criado(s) · {importResult.updated}{" "}
+                    atualizado(s) · {importResult.skipped} ignorado(s).
                   </Banner>
                   {importResult.errors.length > 0 && (
-                    <div className="muted small" style={{ marginTop: 8, maxHeight: 160, overflow: "auto" }}>
+                    <div
+                      className="muted small"
+                      style={{ marginTop: 8, maxHeight: 160, overflow: "auto" }}
+                    >
                       {importResult.errors.map((er, i) => (
-                        <div key={i}>Linha {er.line}: {er.cpf || "(sem CPF)"} — {er.reason}</div>
+                        <div key={i}>
+                          Linha {er.line}: {er.cpf || "(sem CPF)"} — {er.reason}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -181,124 +450,367 @@ export default function ConfiguracoesPage() {
         {isAdmin && showForm && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header">
-              <h3 className="h-card-title">{editingId ? "Editar pré-selecionado" : "Novo pré-selecionado"}</h3>
-              <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={resetForm}><IconX size={14} /></button>
+              <h3 className="h-card-title">
+                {editingId ? "Editar pré-selecionado" : "Novo pré-selecionado"}
+              </h3>
+              <button
+                className="icon-btn"
+                style={{ marginLeft: "auto" }}
+                onClick={resetForm}
+              >
+                <IconX size={14} />
+              </button>
             </div>
             <div className="card-body">
-              <div className="rgrid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+              <div
+                className="rgrid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 12,
+                }}
+              >
                 <div className="field">
-                  <label className="field-label">CPF<span className="req">*</span></label>
-                  <input className="input" placeholder="000.000.000-00" inputMode="numeric" maxLength={14} value={form.cpf} onChange={(e) => setForm((f) => ({ ...f, cpf: maskCpf(e.target.value) }))} />
+                  <label className="field-label">
+                    CPF<span className="req">*</span>
+                  </label>
+                  <input
+                    className="input"
+                    placeholder="000.000.000-00"
+                    inputMode="numeric"
+                    maxLength={14}
+                    value={form.cpf}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, cpf: maskCpf(e.target.value) }))
+                    }
+                  />
                 </div>
                 <div className="field">
                   <label className="field-label">Nome completo</label>
-                  <input className="input" maxLength={120} value={form.fullName ?? ""} onChange={set("fullName")} />
+                  <input
+                    className="input"
+                    maxLength={120}
+                    value={form.fullName ?? ""}
+                    onChange={set("fullName")}
+                  />
                 </div>
                 <div className="field">
                   <label className="field-label">Campus</label>
-                  <select className="input" value={form.campusHint ?? ""} onChange={(e) => setForm((f) => ({ ...f, campusHint: e.target.value, courseHint: "" }))}>
+                  <select
+                    className="input"
+                    value={form.campusHint ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        campusHint: e.target.value,
+                        courseHint: "",
+                        courseId: undefined,
+                      }))
+                    }
+                  >
                     <option value="">Selecione o campus…</option>
-                    {(campusesQuery.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                    {(campusesQuery.data ?? []).map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="field">
                   <label className="field-label">Curso</label>
-                  <select className="input" value={form.courseHint ?? ""} onChange={(e) => setForm((f) => ({ ...f, courseHint: e.target.value }))} disabled={!form.campusHint}>
-                    <option value="">{form.campusHint ? "Selecione o curso…" : "Selecione o campus primeiro"}</option>
-                    {(coursesQuery.data ?? []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  <select
+                    className="input"
+                    value={form.courseId ?? ""}
+                    onChange={(e) => {
+                      const course = (coursesQuery.data ?? []).find(
+                        (item) => item.id === e.target.value,
+                      );
+                      setForm((f) => ({
+                        ...f,
+                        courseId: course?.id,
+                        courseHint: course?.name ?? "",
+                        campusHint: course?.campus.code ?? f.campusHint,
+                      }));
+                    }}
+                    disabled={!form.campusHint}
+                  >
+                    <option value="">
+                      {form.campusHint
+                        ? "Selecione o curso…"
+                        : "Selecione o campus primeiro"}
+                    </option>
+                    {(coursesQuery.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="field">
                   <label className="field-label">Inscrição ENEM</label>
-                  <input className="input" inputMode="numeric" maxLength={12} value={form.enemRegistration ?? ""} onChange={(e) => setForm((f) => ({ ...f, enemRegistration: e.target.value.replace(/\D/g, "").slice(0, 12) }))} />
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    maxLength={12}
+                    value={form.enemRegistration ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        enemRegistration: e.target.value
+                          .replace(/\D/g, "")
+                          .slice(0, 12),
+                      }))
+                    }
+                  />
                 </div>
                 <div className="field">
                   <label className="field-label">Chamada</label>
-                  <select className="input" value={form.call ?? "PRIMEIRA"} onChange={(e) => setForm((f) => ({ ...f, call: e.target.value as PreselectionCall }))}>
-                    {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  <select
+                    className="input"
+                    value={form.callId ?? ""}
+                    onChange={(e) => {
+                      const call = processContext.calls.find(
+                        (item) => item.id === e.target.value,
+                      );
+                      setForm((f) => ({
+                        ...f,
+                        cycleId: call?.cycle.id ?? f.cycleId,
+                        callId: call?.id,
+                        call: call
+                          ? legacyCallForKind(call.kind)
+                          : (f.call ?? "PRIMEIRA"),
+                      }));
+                    }}
+                  >
+                    <option value="">Selecione a chamada…</option>
+                    {processContext.calls.map((call) => (
+                      <option key={call.id} value={call.id}>
+                        {call.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
-              {saveMut.isError && <p className="upload-meta error" style={{ marginTop: 10 }}>{(saveMut.error as Error).message}</p>}
+              {saveMut.isError && (
+                <p className="upload-meta error" style={{ marginTop: 10 }}>
+                  {(saveMut.error as Error).message}
+                </p>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button className="btn btn-primary" disabled={saveMut.isPending || !form.cpf.trim()} onClick={() => saveMut.mutate()}>
-                  <IconCheck size={14} /> {saveMut.isPending ? "Salvando…" : "Salvar"}
+                <button
+                  className="btn btn-primary"
+                  disabled={saveMut.isPending || !canSave}
+                  onClick={() => saveMut.mutate()}
+                >
+                  <IconCheck size={14} />{" "}
+                  {saveMut.isPending ? "Salvando…" : "Salvar"}
                 </button>
-                <button className="btn btn-ghost" onClick={resetForm}>Cancelar</button>
+                <button className="btn btn-ghost" onClick={resetForm}>
+                  Cancelar
+                </button>
               </div>
             </div>
           </div>
         )}
 
         {/* Busca + filtro + tabela */}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-          <div className="search-input" style={{ width: 320, background: "#fff", border: "1px solid var(--ink-200)" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            marginBottom: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            className="search-input"
+            style={{
+              width: 320,
+              background: "#fff",
+              border: "1px solid var(--ink-200)",
+            }}
+          >
             <IconSearch size={14} />
-            <input placeholder="Buscar por CPF ou nome…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input
+              placeholder="Buscar por CPF ou nome…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-          <select className="input" style={{ width: 180 }} value={callFilter} onChange={(e) => setCallFilter(e.target.value)}>
-            <option value="all">Todas as chamadas</option>
-            {PRESELECTION_CALLS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
         </div>
 
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="table">
             <thead>
-              <tr><th>CPF</th><th>Candidato e contato</th><th>Curso</th><th>Campus</th><th>Chamada</th><th>ENEM</th><th>Situação</th><th>Cadastrado</th><th></th></tr>
+              <tr>
+                <th>CPF</th>
+                <th>Candidato e contato</th>
+                <th>Ciclo</th>
+                <th>Chamada</th>
+                <th>Curso / campus</th>
+                <th>ENEM</th>
+                <th>Estado</th>
+                <th>Cadastrado</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               {query.isLoading || !user ? (
-                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Carregando…</td></tr>
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="muted"
+                    style={{ padding: 20, textAlign: "center" }}
+                  >
+                    Carregando…
+                  </td>
+                </tr>
               ) : query.isError ? (
-                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Não foi possível carregar.</td></tr>
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="muted"
+                    style={{ padding: 20, textAlign: "center" }}
+                  >
+                    Não foi possível carregar.
+                  </td>
+                </tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={9} className="muted" style={{ padding: 20, textAlign: "center" }}>Nenhum pré-selecionado.</td></tr>
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="muted"
+                    style={{ padding: 20, textAlign: "center" }}
+                  >
+                    Nenhum pré-selecionado.
+                  </td>
+                </tr>
               ) : (
                 rows.map((e) => (
                   <tr key={e.id}>
                     <td className="mono">{e.cpf}</td>
                     <td>
-                      <div>{e.fullName ?? <span className="muted small">—</span>}</div>
+                      <div>
+                        {e.fullName ?? <span className="muted small">—</span>}
+                      </div>
                       {e.claimed && (e.contactEmail || e.contactPhone) && (
-                        <div className="muted small" style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
-                          {e.contactEmail && <a href={`mailto:${e.contactEmail}`}>{e.contactEmail}</a>}
-                          {e.contactPhone && <a href={`tel:${e.contactPhone.replace(/\D/g, "")}`}>{e.contactPhone}</a>}
+                        <div
+                          className="muted small"
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            marginTop: 3,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {e.contactEmail && (
+                            <a href={`mailto:${e.contactEmail}`}>
+                              {e.contactEmail}
+                            </a>
+                          )}
+                          {e.contactPhone && (
+                            <a
+                              href={`tel:${e.contactPhone.replace(/\D/g, "")}`}
+                            >
+                              {e.contactPhone}
+                            </a>
+                          )}
                         </div>
                       )}
                     </td>
-                    <td>{e.courseHint ?? <span className="muted small">—</span>}</td>
-                    <td>{e.campusHint ?? <span className="muted small">—</span>}</td>
-                    <td>{callLabel(e.call)}</td>
-                    <td className="mono">{e.enemRegistration ?? <span className="muted small">—</span>}</td>
-                    <td>{e.claimed ? <Badge tone="success">Inscrito</Badge> : <Badge tone="neutral">Disponível</Badge>}</td>
+                    <td>
+                      {e.cycle?.label ?? <span className="muted small">—</span>}
+                    </td>
+                    <td>
+                      <div>{e.selectionCall?.name ?? callLabel(e.call)}</div>
+                      {e.selectionCall?.code && (
+                        <div className="muted small mono">
+                          {e.selectionCall.code}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div>
+                        {e.course?.name ?? e.courseHint ?? (
+                          <span className="muted small">—</span>
+                        )}
+                      </div>
+                      <div className="muted small">
+                        {e.course?.campus.name ??
+                          e.course?.campus.code ??
+                          e.campusHint ??
+                          "—"}
+                      </div>
+                    </td>
+                    <td className="mono">
+                      {e.enemRegistration ?? (
+                        <span className="muted small">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <EntryStateBadge entry={e} />
+                    </td>
                     <td className="muted small">{fmtWhen(e.createdAt)}</td>
                     <td>
                       {isAdmin && (
-                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => startEdit(e)}>Editar</button>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={entryState(e) !== "AVAILABLE"}
+                            title={
+                              entryState(e) === "CLAIMED"
+                                ? "Oportunidades reivindicadas não podem ser editadas"
+                                : entryState(e) === "CANCELLED"
+                                  ? "Oportunidade cancelada"
+                                  : "Editar"
+                            }
+                            onClick={() => startEdit(e)}
+                          >
+                            Editar
+                          </button>
                           {e.candidateUserId && (
                             <>
-                              <button className="btn btn-ghost btn-sm" disabled={resetPasswordMut.isPending} onClick={() => resetCandidatePassword(e)} title="Redefinir senha do candidato">
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                disabled={resetPasswordMut.isPending}
+                                onClick={() => resetCandidatePassword(e)}
+                                title="Redefinir senha do candidato"
+                              >
                                 <IconLock size={13} /> Senha
                               </button>
-                              <button className="btn btn-secondary btn-sm" disabled={impersonateMut.isPending} onClick={() => impersonateCandidate(e)} title="Entrar temporariamente na conta do candidato">
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                disabled={impersonateMut.isPending}
+                                onClick={() => impersonateCandidate(e)}
+                                title="Entrar temporariamente na conta do candidato"
+                              >
                                 <IconUser size={13} /> Agir como usuário
                               </button>
                             </>
                           )}
                           <button
                             className="btn btn-ghost btn-sm"
-                            disabled={removeMut.isPending}
-                            title="Excluir"
-                            onClick={() => {
-                              const msg = e.claimed
-                                ? `ATENÇÃO — ${e.cpf} já possui inscrição.\n\nExcluir vai REMOVER permanentemente a inscrição, os documentos enviados e a conta do candidato, além do pré-selecionado. Esta ação é IRREVERSÍVEL.\n\nDeseja continuar?`
-                                : `Excluir o pré-selecionado ${e.cpf}?`;
-                              if (confirm(msg)) removeMut.mutate(e.id);
-                            }}
+                            disabled={
+                              entryState(e) !== "AVAILABLE" ||
+                              removeMut.isPending
+                            }
+                            title={
+                              entryState(e) === "CANCELLED"
+                                ? "Oportunidade já cancelada"
+                                : entryState(e) === "CLAIMED"
+                                  ? "A inscrição já foi iniciada; use o fluxo formal de encerramento"
+                                  : "Cancelar oportunidade ainda não iniciada"
+                            }
+                            onClick={() => cancelEntry(e)}
                           >
-                            <IconTrash size={13} />
+                            <IconTrash size={13} /> Cancelar
                           </button>
                         </div>
                       )}
@@ -308,10 +820,23 @@ export default function ConfiguracoesPage() {
               )}
             </tbody>
           </table>
-          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--ink-200)", background: "var(--ink-50)", color: "var(--ink-600)", fontSize: 12.5 }}>
-            {rows.length} de {all.length} pré-selecionado(s) {removeMut.isError ? `· ${(removeMut.error as Error).message}` : ""}
-            {resetPasswordMut.isError ? ` · ${(resetPasswordMut.error as Error).message}` : ""}
-            {impersonateMut.isError ? ` · ${(impersonateMut.error as Error).message}` : ""}
+          <div
+            style={{
+              padding: "10px 14px",
+              borderTop: "1px solid var(--ink-200)",
+              background: "var(--ink-50)",
+              color: "var(--ink-600)",
+              fontSize: 12.5,
+            }}
+          >
+            {rows.length} de {all.length} pré-selecionado(s){" "}
+            {removeMut.isError ? `· ${(removeMut.error as Error).message}` : ""}
+            {resetPasswordMut.isError
+              ? ` · ${(resetPasswordMut.error as Error).message}`
+              : ""}
+            {impersonateMut.isError
+              ? ` · ${(impersonateMut.error as Error).message}`
+              : ""}
           </div>
         </div>
       </div>
