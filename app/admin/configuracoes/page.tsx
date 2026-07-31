@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProcessContextSelector } from "@/components/process-context-selector";
+import { SelectionCallForm } from "@/components/selection-call-form";
 import { Badge, Banner } from "@/components/ui";
 import {
   IconCheck,
@@ -17,7 +18,12 @@ import {
   IconX,
 } from "@/components/icons";
 import { useRequireStaff } from "@/lib/use-require-auth";
-import { authApi, coursesApi, preselectionApi } from "@/lib/api";
+import {
+  authApi,
+  coursesApi,
+  preselectionApi,
+  selectionCallsApi,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { maskCpf } from "@/lib/format";
 import { useAdminProcessContext } from "@/lib/use-admin-process-context";
@@ -27,6 +33,7 @@ import {
   type PreselectionEntryDto,
   type PreselectionImportResult,
   type PreselectionInput,
+  type SelectionCallInput,
   type SelectionCallSummaryDto,
 } from "@prouni/shared";
 
@@ -80,6 +87,7 @@ export default function ConfiguracoesPage() {
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showCallForm, setShowCallForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PreselectionInput>(EMPTY);
   const [importResult, setImportResult] =
@@ -164,6 +172,24 @@ export default function ConfiguracoesPage() {
       resetForm();
     },
   });
+  const createCallMut = useMutation({
+    mutationFn: (input: SelectionCallInput) => selectionCallsApi.create(input),
+    onSuccess: (created) => {
+      qc.setQueryData<SelectionCallSummaryDto[]>(
+        ["admin", "selection-calls"],
+        (current) => {
+          const calls = current ?? [];
+          return calls.some((call) => call.id === created.id)
+            ? calls.map((call) => (call.id === created.id ? created : call))
+            : [...calls, created];
+        },
+      );
+      processContext.setCycleId(created.cycle.id);
+      processContext.setCallId(created.id);
+      setShowCallForm(false);
+      void qc.invalidateQueries({ queryKey: ["admin", "selection-calls"] });
+    },
+  });
   const removeMut = useMutation({
     mutationFn: (vars: { id: string; reason: string }) =>
       preselectionApi.remove(vars.id, vars.reason),
@@ -240,11 +266,13 @@ export default function ConfiguracoesPage() {
   };
   const changeCycle = (cycleId: string) => {
     resetForm();
+    setShowCallForm(false);
     setImportResult(null);
     processContext.setCycleId(cycleId);
   };
   const changeCall = (callId: string) => {
     resetForm();
+    setShowCallForm(false);
     setImportResult(null);
     processContext.setCallId(callId);
   };
@@ -306,18 +334,32 @@ export default function ConfiguracoesPage() {
               </button>
             )}
             {isAdmin && (
-              <button
-                className="btn btn-primary"
-                disabled={!processContext.selectedCall}
-                title={
-                  processContext.selectedCall
-                    ? "Cadastrar candidato nesta chamada"
-                    : "Selecione uma chamada específica"
-                }
-                onClick={startCreate}
-              >
-                <IconPlus size={14} /> Novo pré-selecionado
-              </button>
+              <>
+                <button
+                  className="btn btn-ghost"
+                  disabled={
+                    !processContext.selectedCycle || createCallMut.isPending
+                  }
+                  onClick={() => {
+                    createCallMut.reset();
+                    setShowCallForm((current) => !current);
+                  }}
+                >
+                  <IconPlus size={14} /> Criar chamada
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={!processContext.selectedCall}
+                  title={
+                    processContext.selectedCall
+                      ? "Cadastrar candidato nesta chamada"
+                      : "Selecione ou crie uma chamada específica"
+                  }
+                  onClick={startCreate}
+                >
+                  <IconPlus size={14} /> Novo pré-selecionado
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -337,6 +379,44 @@ export default function ConfiguracoesPage() {
           <Banner tone="danger" title="Não foi possível carregar o contexto">
             Atualize a página ou tente novamente em instantes.
           </Banner>
+        )}
+
+        {isAdmin && showCallForm && processContext.selectedCycle && (
+          <div style={{ marginTop: 14, marginBottom: 14 }}>
+            <SelectionCallForm
+              key={`create-call-${processContext.selectedCycle.id}`}
+              cycleId={processContext.selectedCycle.id}
+              cycleLabel={processContext.selectedCycle.label}
+              suggestedSequence={
+                Math.max(
+                  0,
+                  ...processContext.calls.map((call) => call.sequence),
+                ) + 1
+              }
+              pending={createCallMut.isPending}
+              error={
+                createCallMut.isError
+                  ? (createCallMut.error as Error).message
+                  : null
+              }
+              onSubmit={(input) => createCallMut.mutate(input)}
+              onCancel={() => {
+                createCallMut.reset();
+                setShowCallForm(false);
+              }}
+            />
+          </div>
+        )}
+
+        {isAdmin && !processContext.selectedCall && !showCallForm && (
+          <div style={{ marginTop: 14, marginBottom: 14 }}>
+            <Banner tone="info" title="Escolha a chamada que receberá os candidatos">
+              Para cadastrar ou importar pré-selecionados, selecione uma chamada
+              específica. Se ela ainda não existir neste ciclo, use “Criar
+              chamada” acima. O modo “Todas as chamadas” é apenas para consulta
+              do histórico.
+            </Banner>
+          </div>
         )}
 
         {!isAdmin && (

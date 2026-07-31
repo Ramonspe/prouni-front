@@ -744,12 +744,38 @@ export interface SystemSettingsDto {
   call2End: string | null;
   waitlistStart: string | null; // lista de espera
   waitlistEnd: string | null;
+  call1RegistrationStartAt: string | null;
+  call1RegistrationEndAt: string | null;
+  call1InProgressStartAt: string | null;
+  call1InProgressEndAt: string | null;
+  call2RegistrationStartAt: string | null;
+  call2RegistrationEndAt: string | null;
+  call2InProgressStartAt: string | null;
+  call2InProgressEndAt: string | null;
+  waitlistRegistrationStartAt: string | null;
+  waitlistRegistrationEndAt: string | null;
+  waitlistInProgressStartAt: string | null;
+  waitlistInProgressEndAt: string | null;
   notifyCandidate: boolean; // avisar o candidato por e-mail nas decisões
+  autoRejectPendingAfterDeadline: boolean;
+  autoRejectPendingComment: string;
   allowPendencyResubmission: boolean; // candidato em pendência reenvia/corrige mesmo fora do prazo da chamada
   pendencyResubmissionDeadline: string | null; // "YYYY-MM-DD" — data limite do reenvio de pendências (null = sem prazo extra)
   updatedAt: string; // ISO
   integralCap: string; // teto integral calculado = minimumWage × integralFactor
   parcialCap: string; // teto parcial calculado = minimumWage × parcialFactor
+}
+
+export interface AutoRejectionRunDto {
+  id: string;
+  createdAt: string;
+  total: number;
+  comment: string;
+}
+
+export interface AutoRejectionRevertResult {
+  restored: number;
+  skipped: number;
 }
 
 /* ============ Catálogo da matriz documental (editor visual) ============ */

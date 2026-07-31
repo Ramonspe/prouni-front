@@ -1775,15 +1775,15 @@ export default function AnalysisPage() {
                             onClick={() => {
                               if (
                                 confirm(
-                                  "Reverter a exportação? Remove o vínculo com o RM e volta o status para Classificado. Use apenas para corrigir uma exportação indevida (ex.: feita sem o RM configurado).",
+                                  "Confirmo que consultei o RM e o candidato não foi localizado. Liberar uma nova exportação? O Portal voltará o status para Classificado, sem alterar nenhum cadastro no RM.",
                                 )
                               )
                                 revertRmMut.mutate();
                             }}
                           >
                             {revertRmMut.isPending
-                              ? "Revertendo…"
-                              : "Reverter exportação"}
+                               ? "Liberando…"
+                               : "Liberar nova exportação"}
                           </button>
                         </>
                       )}

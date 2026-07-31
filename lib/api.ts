@@ -17,6 +17,8 @@ import type {
   UserUpdateInput,
   MaintenanceSummaryDto,
   MaintenanceResetResult,
+  AutoRejectionRevertResult,
+  AutoRejectionRunDto,
   SystemSettingsDto,
   SystemSettingsInput,
   RegistrationStatusDto,
@@ -607,7 +609,7 @@ export const adminApi = {
       method: "POST",
       body: { applicationIds },
     }),
-  /** Reverte a exportação (corretivo, ADMIN): limpa o vínculo com o RM e volta o status. */
+  /** Libera nova exportação (ADMIN) após confirmar que o candidato não existe no RM. */
   revertRm: (appId: string) =>
     apiFetch<AdminApplicationDetail>(
       `/admin/applications/${appId}/rm-export/revert`,
@@ -789,6 +791,10 @@ export const settingsApi = {
   get: () => apiFetch<SystemSettingsDto>("/admin/settings"),
   update: (body: SystemSettingsInput) =>
     apiFetch<SystemSettingsDto>("/admin/settings", { method: "PUT", body }),
+  latestAutoRejectionRun: () =>
+    apiFetch<AutoRejectionRunDto | null>("/admin/settings/auto-rejections/latest"),
+  undoAutoRejectionRun: (runId: string) =>
+    apiFetch<AutoRejectionRevertResult>(`/admin/settings/auto-rejections/${runId}/undo`, { method: "POST" }),
 };
 
 /** Chamadas e revisões de cronograma (Configurações → Cronograma e prazos). */
