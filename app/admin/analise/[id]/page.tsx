@@ -297,7 +297,10 @@ export default function AnalysisPage() {
   });
   const revertRmMut = useMutation({
     mutationFn: () => adminApi.revertRm(params.id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      exportRmMut.reset();
+      invalidate();
+    },
   });
   const incomeMut = useMutation({
     mutationFn: () =>
@@ -1775,7 +1778,7 @@ export default function AnalysisPage() {
                             onClick={() => {
                               if (
                                 confirm(
-                                  "Confirmo que consultei o RM e o candidato não foi localizado. Liberar uma nova exportação? O Portal voltará o status para Classificado, sem alterar nenhum cadastro no RM.",
+                                  "Confirmo que consultei o RM e o candidato não possui inscrição no processo seletivo atual. Liberar uma nova exportação? O Portal voltará o status para Classificado, sem alterar nenhum cadastro no RM.",
                                 )
                               )
                                 revertRmMut.mutate();
@@ -1803,6 +1806,43 @@ export default function AnalysisPage() {
                           {(exportRmMut.error as Error).message}
                         </p>
                       )}
+                      {user?.role === "ADMIN" &&
+                        (exportRmMut.error as Error | null)?.message.includes(
+                          "revertida somente no Portal",
+                        ) && (
+                          <>
+                            <p className="muted small" style={{ marginBottom: 8 }}>
+                              Após confirmar a ausência de inscrição no processo
+                              seletivo atual, libere o vínculo interno antigo
+                              para tentar a exportação novamente.
+                            </p>
+                            {revertRmMut.isError && (
+                              <p
+                                className="upload-meta error"
+                                style={{ marginBottom: 8 }}
+                              >
+                                {(revertRmMut.error as Error).message}
+                              </p>
+                            )}
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ marginBottom: 10, color: "var(--red-700)" }}
+                              disabled={busy || revertRmMut.isPending}
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    "Confirmo que consultei o RM e o candidato não possui inscrição no processo seletivo atual. Liberar o vínculo interno legado para uma nova exportação? Nenhum cadastro no RM será alterado.",
+                                  )
+                                )
+                                  revertRmMut.mutate();
+                              }}
+                            >
+                              {revertRmMut.isPending
+                                ? "Liberando…"
+                                : "Liberar nova exportação"}
+                            </button>
+                          </>
+                        )}
                       <button
                         className="btn btn-primary btn-block"
                         disabled={busy || exportRmMut.isPending}
