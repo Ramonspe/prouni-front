@@ -422,6 +422,59 @@ export default function AnalysisPage() {
   const rejectedDocuments = d.documents.filter(
     (document) => document.status === "REPROVADO",
   );
+
+  // Agrupa os documentos por integrante do grupo familiar (item da reunião:
+  // facilita conferir uma pessoa por vez). Documentos da inscrição (sem membro)
+  // vêm primeiro; dentro de cada grupo, ordena por prioridade de análise:
+  // ENVIADO (a revisar) → REPROVADO → A_ENVIAR (faltando) → APROVADO (no fim).
+  const DOC_STATUS_ORDER: Record<DocumentStatusDb, number> = {
+    ENVIADO: 0,
+    REPROVADO: 1,
+    A_ENVIAR: 2,
+    APROVADO: 3,
+  };
+  const APP_DOC_KEY = "__app__";
+  const documentGroups = (() => {
+    const map = new Map<
+      string,
+      { key: string; label: string; sub: string | null; docs: AdminDocumentDto[] }
+    >();
+    map.set(APP_DOC_KEY, {
+      key: APP_DOC_KEY,
+      label: "Documentos da inscrição",
+      sub: null,
+      docs: [],
+    });
+    for (const member of d.family) {
+      map.set(member.id, {
+        key: member.id,
+        label: member.fullName,
+        sub: member.relationship,
+        docs: [],
+      });
+    }
+    for (const doc of d.documents) {
+      const key = doc.familyMemberId ?? APP_DOC_KEY;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: doc.memberName ?? "Outros",
+          sub: null,
+          docs: [],
+        });
+      }
+      map.get(key)!.docs.push(doc);
+    }
+    return Array.from(map.values())
+      .filter((group) => group.docs.length > 0)
+      .map((group) => ({
+        ...group,
+        docs: [...group.docs].sort(
+          (a, b) => DOC_STATUS_ORDER[a.status] - DOC_STATUS_ORDER[b.status],
+        ),
+        toReview: group.docs.filter((x) => x.status === "ENVIADO").length,
+      }));
+  })();
   const selectedPendingDocuments = rejectedDocuments.filter((document) =>
     pendingDocumentKeys.includes(documentPendingKey(document)),
   );
@@ -498,7 +551,7 @@ export default function AnalysisPage() {
                 <PriorityBadge priority={d.priority} />
                 {d.optsForQuota && (
                   <Badge tone="info" dot={false}>
-                    Optante por cotas
+                    Optante por cota racial
                   </Badge>
                 )}
               </div>
@@ -861,6 +914,42 @@ export default function AnalysisPage() {
                         >
                           <IconX size={13} /> Fechar
                         </button>
+                        {canReviewDocuments && viewer.status !== "A_ENVIAR" && (
+                          <>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              disabled={busy || viewer.status === "APROVADO"}
+                              onClick={() =>
+                                reviewMut.mutate(
+                                  {
+                                    documentId: viewer.documentId,
+                                    decision: "APROVADO",
+                                  },
+                                  {
+                                    onSuccess: () =>
+                                      setViewer((prev) =>
+                                        prev
+                                          ? { ...prev, status: "APROVADO" }
+                                          : prev,
+                                      ),
+                                  },
+                                )
+                              }
+                            >
+                              <IconCheck size={13} /> Aprovar
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              disabled={busy}
+                              onClick={() => {
+                                setRejectId(viewer.documentId);
+                                setRejectComment("");
+                              }}
+                            >
+                              <IconAlert size={13} /> Reprovar
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                     <div
@@ -883,6 +972,57 @@ export default function AnalysisPage() {
                       )}
                     </div>
                   </div>
+                  {viewer && rejectId === viewer.documentId && (
+                    <div
+                      style={{
+                        padding: 12,
+                        background: "var(--ink-50)",
+                        borderBottom: "1px solid var(--ink-150)",
+                      }}
+                    >
+                      <div className="field-label" style={{ marginBottom: 6 }}>
+                        Motivo da reprovação (vai para o candidato)
+                      </div>
+                      <textarea
+                        className="textarea"
+                        rows={2}
+                        value={rejectComment}
+                        onChange={(e) => setRejectComment(e.target.value)}
+                        placeholder="Ex.: imagem ilegível, documento incompleto…"
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={busy || !rejectComment.trim()}
+                          onClick={() =>
+                            reviewMut.mutate(
+                              {
+                                documentId: viewer.documentId,
+                                decision: "REPROVADO",
+                                comment: rejectComment.trim(),
+                              },
+                              {
+                                onSuccess: () =>
+                                  setViewer((prev) =>
+                                    prev
+                                      ? { ...prev, status: "REPROVADO" }
+                                      : prev,
+                                  ),
+                              },
+                            )
+                          }
+                        >
+                          Confirmar reprovação
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setRejectId(null)}
+                        >
+                          <IconX size={12} /> Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="viewer-body" style={{ padding: 0 }}>
                     {viewerLoading ? (
                       <div className="muted small" style={{ padding: 28 }}>
@@ -936,7 +1076,34 @@ export default function AnalysisPage() {
                     Nenhum documento enviado até o momento.
                   </div>
                 ) : (
-                  d.documents.map((doc: AdminDocumentDto, i) => {
+                  documentGroups.map((group) => (
+                    <div key={group.key} style={{ marginTop: 12 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 2px 4px",
+                          borderBottom: "1px solid var(--ink-150)",
+                          margin: "2px 0 6px",
+                        }}
+                      >
+                        <IconUser size={13} />
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>
+                          {group.label}
+                        </span>
+                        {group.sub && (
+                          <span className="muted small">· {group.sub}</span>
+                        )}
+                        {group.toReview > 0 && (
+                          <span style={{ marginLeft: "auto" }}>
+                            <Badge tone="warning">
+                              {group.toReview} a revisar
+                            </Badge>
+                          </span>
+                        )}
+                      </div>
+                      {group.docs.map((doc: AdminDocumentDto, i) => {
                       const v = docVisual(doc.status);
                       const hasFile =
                         doc.status !== "A_ENVIAR" && !!doc.documentId;
@@ -1087,7 +1254,9 @@ export default function AnalysisPage() {
                           )}
                         </div>
                       );
-                  })
+                      })}
+                    </div>
+                  ))
                 )}
                 {reviewMut.isError && (
                   <p className="upload-meta error" style={{ marginTop: 8 }}>
@@ -1098,7 +1267,34 @@ export default function AnalysisPage() {
             </div>
 
             {["ADMIN", "ANALYST"].includes(user.role) && (
-              <SocioFormReview socioForm={socioFormQuery.data ?? null} />
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={`/admin/analise/${params.id}/documentos/imprimir`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <IconDownload size={13} /> Imprimir lista de documentos
+                  </a>
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={`/admin/analise/${params.id}/ficha/imprimir`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <IconDownload size={13} /> Imprimir ficha
+                  </a>
+                </div>
+                <SocioFormReview socioForm={socioFormQuery.data ?? null} />
+              </>
             )}
 
             <div className="card">
@@ -1308,6 +1504,18 @@ export default function AnalysisPage() {
                     </span>
                   </div>
                 ))}
+                {d.summary.incomeBasis === "ADJUSTED" && (
+                  <div
+                    className="muted small"
+                    style={{ padding: "2px 0 6px", textAlign: "right" }}
+                  >
+                    Per capita e perfil calculados sobre a renda ajustada (
+                    {fmtMoney(
+                      d.summary.adjustedTotalIncome ?? d.summary.totalIncome,
+                    )}
+                    ).
+                  </div>
+                )}
                 <div
                   style={{
                     display: "flex",
@@ -1363,9 +1571,8 @@ export default function AnalysisPage() {
                     >
                       {fmtMoney(d.summary.totalIncome)}
                     </span>
-                    . O ajuste altera apenas a linha “Renda bruta total” do
-                    resumo — a renda per capita e o perfil PROUNI seguem pelo
-                    valor declarado.
+                    . Ao informar um ajuste, a renda per capita e o perfil
+                    PROUNI passam a ser recalculados por este valor.
                   </div>
                 )}
                 <div className="field" style={{ marginTop: 10 }}>
@@ -1400,6 +1607,62 @@ export default function AnalysisPage() {
                 >
                   {incomeMut.isPending ? "Salvando…" : "Salvar ajuste"}
                 </button>
+                {incomeAdjusted && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      borderTop: "1px solid var(--ink-150)",
+                      paddingTop: 10,
+                    }}
+                  >
+                    <div className="field-label" style={{ marginBottom: 6 }}>
+                      Histórico de ajustes
+                    </div>
+                    <ul
+                      style={{
+                        listStyle: "none",
+                        margin: 0,
+                        padding: 0,
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      {incomeHistory.map((h, i) => (
+                        <li
+                          key={i}
+                          className="small"
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                          }}
+                        >
+                          <span className="muted">
+                            {new Date(h.at).toLocaleString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            {h.by ? ` · ${h.by}` : ""}
+                            {h.note ? ` — ${h.note}` : ""}
+                          </span>
+                          <span
+                            className="mono"
+                            style={{
+                              whiteSpace: "nowrap",
+                              color: "var(--ink-900)",
+                            }}
+                          >
+                            {fmtMoney(h.previous ?? d.summary.totalIncome)} →{" "}
+                            {fmtMoney(h.value)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
 

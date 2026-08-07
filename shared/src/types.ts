@@ -173,6 +173,7 @@ export type DocCondition =
   | "IS_IMT_AFFILIATED" // candidato é funcionário/professor/dependente do IMT
   | "HAS_UNDECLARED_ASSETS" // declarou bens/imóveis não declarados no IR
   | "INCOME_COMMISSION_OVERTIME" // membro recebe comissão ou hora extra (→ 6 holerites)
+  | "HAS_CNPJ" // membro possui CNPJ ativo ou inativo
   | "COMPANY_INACTIVE"; // membro é sócio de empresa inativa (→ DCTF/DEFIS sem movimento)
 
 /* ===================== DTOs de resposta da API (M2) ===================== */
@@ -386,6 +387,7 @@ export interface FamilyMemberDto {
   occupation: string | null;
   incomeSituations: IncomeSituation[];
   receivesCommissionOvertime: boolean; // sub-pergunta de assalariado → 6 holerites
+  hasCnpj: boolean | null; // pergunta para todos os integrantes adultos
   companyInactive: boolean; // sub-pergunta de empresário → DCTF/DEFIS sem movimento
   grossIncome: string | null;
   isStudent: boolean;
@@ -422,6 +424,11 @@ export interface SocioSummaryDto {
   totalExpenses: string;
   netIncome: string;
   perCapita: string;
+  /** Renda bruta total apurada pela equipe (substitui a declarada como base do
+   *  per capita/perfil quando informada). Null quando não houve ajuste. */
+  adjustedTotalIncome: string | null;
+  /** Base usada no per capita e no enquadramento: declarada ou ajustada. */
+  incomeBasis: "DECLARED" | "ADJUSTED";
   membersCount: number;
   profile: "INTEGRAL" | "PARCIAL" | null;
 }
@@ -877,7 +884,7 @@ export const DOC_CONDITIONS: {
   },
   {
     value: "OPT_IN_COTAS",
-    label: "Quando a inscrição concorre por cotas",
+    label: "Quando a inscrição concorre por cota racial",
     valueSet: "NONE",
   },
   {
@@ -903,6 +910,11 @@ export const DOC_CONDITIONS: {
   {
     value: "INCOME_COMMISSION_OVERTIME",
     label: "Quando o integrante recebe comissão ou hora extra",
+    valueSet: "NONE",
+  },
+  {
+    value: "HAS_CNPJ",
+    label: "Quando o integrante possui CNPJ ativo ou inativo",
     valueSet: "NONE",
   },
   {

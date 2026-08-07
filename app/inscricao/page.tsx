@@ -238,9 +238,9 @@ function StepAccount({
             <input type="checkbox" checked={optInCotas} onChange={() => setOptInCotas((v) => !v)} />
             <span className="box" />
             <span>
-              Desejo concorrer às <strong>vagas reservadas por cotas</strong> (Lei nº 11.096/2005 e Lei nº
+              Desejo concorrer às <strong>vagas reservadas por cota racial</strong> (Lei nº 11.096/2005 e Lei nº
               12.711/2012). Estou ciente de que deverei preencher e assinar o{" "}
-              <a href="/modelos/anexo-02-autodeclaracao-etnico-racial.docx" target="_blank" rel="noopener noreferrer">Formulário de Autodeclaração de Cotas</a> e
+              <a href="/modelos/anexo-02-autodeclaracao-etnico-racial.docx" target="_blank" rel="noopener noreferrer">Formulário de Autodeclaração de Cota Racial</a> e
               anexá-lo junto aos demais documentos comprobatórios.
             </span>
           </label>
@@ -747,12 +747,63 @@ export function StepFamilia({
                           <span className="box" /><span className="small">Recebe comissão ou hora extra (exige os 6 últimos holerites)</span>
                         </label>
                       )}
-                      {(m.incomeSituations ?? []).includes("EMPRESARIO") && (
-                        <label className="checkbox" style={{ marginTop: 6 }}>
-                          <input type="checkbox" defaultChecked={m.companyInactive} onChange={(e) => update(m.id, { companyInactive: e.target.checked })} />
-                          <span className="box" /><span className="small">A empresa está inativa (exige DCTF/DEFIS sem movimento)</span>
-                        </label>
-                      )}
+                      <div style={{ marginTop: 12 }}>
+                        <div className="muted small" style={{ marginBottom: 6 }}>
+                          Este membro possui CNPJ ativo ou inativo?<span className="req">*</span>
+                        </div>
+                        {hasIssue(m.id, "hasCnpj") && (
+                          <div className="field-help" style={{ color: "var(--red-700)", marginTop: 5 }}>
+                            Informe se o integrante possui CNPJ.
+                          </div>
+                        )}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {[
+                            { value: false, label: "Não possui" },
+                            { value: true, label: "Sim, possui CNPJ" },
+                          ].map((option) => {
+                            const selected = m.hasCnpj === option.value;
+                            return (
+                              <button
+                                key={String(option.value)}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => update(m.id, option.value ? { hasCnpj: true } : { hasCnpj: false, companyInactive: false })}
+                                style={{
+                                  fontSize: 12,
+                                  padding: "5px 10px",
+                                  borderRadius: 16,
+                                  border: "1px solid " + (selected ? "var(--blue-600)" : hasIssue(m.id, "hasCnpj") ? "var(--red-500)" : "var(--ink-200)"),
+                                  background: selected ? "var(--blue-50)" : "#fff",
+                                  color: selected ? "var(--blue-700)" : "var(--ink-700)",
+                                  fontWeight: selected ? 600 : 500,
+                                }}
+                              >
+                                {selected ? "✓ " : ""}{option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {m.hasCnpj && (
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+                            <label className="muted small">
+                              Situação do CNPJ{" "}
+                              <select
+                                className="input"
+                                style={{ width: 105, height: 28, fontSize: 12.5, padding: "0 8px" }}
+                                value={m.companyInactive ? "inativo" : "ativo"}
+                                onChange={(e) => update(m.id, { companyInactive: e.target.value === "inativo" })}
+                              >
+                                <option value="ativo">Ativo</option>
+                                <option value="inativo">Inativo</option>
+                              </select>
+                            </label>
+                            <span className="muted small">
+                              Serão solicitados DECORE/declaração do contador, extratos PJ e IRPJ.
+                              {m.companyInactive ? " Para CNPJ inativo, também DCTF Web ou DEFIS sem movimento e declaração do contador." : ""}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

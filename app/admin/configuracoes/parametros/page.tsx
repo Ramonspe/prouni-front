@@ -1,13 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Banner } from "@/components/ui";
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { settingsApi } from "@/lib/api";
 import type { SystemSettingsInput } from "@prouni/shared";
-import { composeBrasiliaInstant, getBrasiliaCivilParts } from "@/lib/brasilia-time";
 
 const EMPTY: SystemSettingsInput = {
   minimumWage: "1518.00",
@@ -30,15 +28,26 @@ const EMPTY: SystemSettingsInput = {
   pendencyResubmissionDeadline: null,
 };
 
-/** Formata "1518.00" (ou "1,5") em R$ pt-BR; retorna "—" se inválido. */
+/**
+ * Normaliza um número em formato pt-BR ("1.518,00") para o canônico ("1518.00").
+ * Quando há vírgula, ela é o separador decimal → remove pontos de milhar e troca
+ * a vírgula por ponto. Sem vírgula, mantém como está (já canônico ou só dígitos).
+ */
+function normalizeDecimal(v: string): string {
+  const s = String(v).trim();
+  if (!s) return s;
+  return s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
+}
+
+/** Formata "1518.00" (ou "1.518,00") em R$ pt-BR; retorna "—" se inválido. */
 function brl(v: string): string {
-  const n = Number(String(v).replace(",", "."));
+  const n = Number(normalizeDecimal(v));
   return Number.isFinite(n)
     ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
     : "—";
 }
 function cap(mw: string, factor: string): string {
-  const n = Number(String(mw).replace(",", ".")) * Number(String(factor).replace(",", "."));
+  const n = Number(normalizeDecimal(mw)) * Number(normalizeDecimal(factor));
   return Number.isFinite(n)
     ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
     : "—";
@@ -47,20 +56,15 @@ function cap(mw: string, factor: string): string {
 export default function ParametrosPage() {
   const { user } = useRequireStaff();
   const qc = useQueryClient();
+  const canManageSettings = user?.role === "ADMIN" || user?.role === "ANALYST";
+  // Consulta/desfazer do indeferimento automático é restrito a ADMIN.
   const isAdmin = user?.role === "ADMIN";
 
   const query = useQuery({
     queryKey: ["admin", "settings"],
     queryFn: () => settingsApi.get(),
-    enabled: !!user && isAdmin,
+    enabled: !!user && canManageSettings,
   });
-  const callsQuery = useQuery({
-    queryKey: ["admin", "selection-calls", "legacy-lock"],
-    queryFn: async () => [],
-    enabled: false,
-  });
-  const hasCanonicalSchedule = false;
-  const legacyScheduleLocked = false;
   const latestAutoRejectionQuery = useQuery({
     queryKey: ["admin", "settings", "auto-rejections", "latest"],
     queryFn: () => settingsApi.latestAutoRejectionRun(),
@@ -104,18 +108,17 @@ export default function ParametrosPage() {
 
   const set = <K extends keyof SystemSettingsInput>(k: K, v: SystemSettingsInput[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
-  const dateTimeValue = (value: string | null | undefined) => {
-    if (!value) return "";
-    const parts = getBrasiliaCivilParts(value);
-    return `${parts.date}T${parts.time}`;
-  };
-  const setDateTime = (k: keyof SystemSettingsInput, value: string) =>
-    set(k, (value ? composeBrasiliaInstant(value.slice(0, 10), value.slice(11, 16)) : null) as SystemSettingsInput[typeof k]);
   const setDate = (k: keyof SystemSettingsInput, value: string) =>
     set(k, (value || null) as SystemSettingsInput[typeof k]);
 
   const saveMut = useMutation({
-    mutationFn: () => settingsApi.update(form),
+    mutationFn: () =>
+      settingsApi.update({
+        ...form,
+        minimumWage: normalizeDecimal(form.minimumWage),
+        integralFactor: normalizeDecimal(form.integralFactor),
+        parcialFactor: normalizeDecimal(form.parcialFactor),
+      }),
     onSuccess: (data) => {
       qc.setQueryData(["admin", "settings"], data);
       qc.invalidateQueries({ queryKey: ["admin", "settings", "auto-rejections"] });
@@ -129,17 +132,6 @@ export default function ParametrosPage() {
     },
   });
 
-  const dateTimeField = (label: string, key: keyof SystemSettingsInput) => (
-    <div className="field">
-      <label className="field-label">{label}</label>
-      <input
-        type="datetime-local"
-        className="input"
-        value={dateTimeValue(form[key] as string | null)}
-        onChange={(e) => setDateTime(key, e.target.value)}
-      />
-    </div>
-  );
   const dateField = (label: string, key: keyof SystemSettingsInput) => (
     <div className="field">
       <label className="field-label">{label}</label>
@@ -147,7 +139,6 @@ export default function ParametrosPage() {
         type="date"
         className="input"
         value={(form[key] as string | null) ?? ""}
-        disabled={legacyScheduleLocked}
         onChange={(e) => setDate(key, e.target.value)}
       />
     </div>
@@ -164,9 +155,9 @@ export default function ParametrosPage() {
           </p>
         </div>
 
-        {!isAdmin ? (
+        {!canManageSettings ? (
           <Banner tone="info" title="Acesso restrito">
-            Apenas administradores podem editar os parâmetros do sistema.
+            Apenas administradores e analistas podem editar os parâmetros do sistema.
           </Banner>
         ) : query.isLoading ? (
           <div className="card card-pad muted">Carregando parâmetros…</div>
@@ -222,39 +213,6 @@ export default function ParametrosPage() {
             </div>
 
             <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header"><h3 className="h-card-title">Períodos de inscrição e envio de documentos</h3></div>
-              <div className="card-body">
-                <Banner tone="info" title="Os dois períodos são independentes">
-                  Fechar novas inscrições não interrompe a ficha ou o envio de documentos de quem já possui uma inscrição iniciada.
-                </Banner>
-                {([
-                  ["1ª chamada", "call1"],
-                  ["2ª chamada", "call2"],
-                  ["Lista de espera", "waitlist"],
-                ] as const).map(([label, prefix]) => (
-                  <div key={prefix} style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line, #e5e7eb)" }}>
-                    <h4 style={{ margin: "0 0 10px" }}>{label}</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
-                      <div>
-                        <strong>Novas inscrições</strong>
-                        <p className="muted small">Cria conta e inicia uma nova inscrição.</p>
-                        {dateTimeField("Início", `${prefix}RegistrationStartAt` as keyof SystemSettingsInput)}
-                        {dateTimeField("Fim", `${prefix}RegistrationEndAt` as keyof SystemSettingsInput)}
-                      </div>
-                      <div>
-                        <strong>Ficha e documentos de inscrições já iniciadas</strong>
-                        <p className="muted small">Completa dados e envia documentos. Em branco, permanece liberado.</p>
-                        {dateTimeField("Início", `${prefix}InProgressStartAt` as keyof SystemSettingsInput)}
-                        {dateTimeField("Fim", `${prefix}InProgressEndAt` as keyof SystemSettingsInput)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <>
-            <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header"><h3 className="h-card-title">Correção de pendências</h3></div>
               <div className="card-body">
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
@@ -275,71 +233,6 @@ export default function ParametrosPage() {
               </div>
             </div>
 
-            {/* Cronograma legado, mantido apenas para compatibilidade de código. */}
-            <div style={{ display: "none" }}>
-              <div className="card-header"><h3 className="h-card-title">Cronograma — janelas de entrega de documentos</h3></div>
-              <div className="card-body">
-                {hasCanonicalSchedule ? (
-                  <Banner tone="info" title="Cronograma migrado">
-                    Estes campos antigos estão disponíveis apenas para consulta.
-                    Datas, horários e cada tipo de janela devem ser alterados em{" "}
-                    <Link href="/admin/configuracoes/cronograma">
-                      Cronograma e prazos
-                    </Link>
-                    .
-                  </Banner>
-                ) : callsQuery.isError ? (
-                  <Banner tone="warn" title="Cronograma protegido">
-                    Não foi possível confirmar a origem oficial dos prazos.
-                    Os campos permanecem bloqueados até a consulta ser
-                    restabelecida.
-                  </Banner>
-                ) : null}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, maxWidth: 560 }}>
-                  {dateField("1ª chamada — início", "call1Start")}
-                  {dateField("1ª chamada — fim", "call1End")}
-                  {dateField("2ª chamada — início", "call2Start")}
-                  {dateField("2ª chamada — fim", "call2End")}
-                  {dateField("Lista de espera — início", "waitlistStart")}
-                  {dateField("Lista de espera — fim", "waitlistEnd")}
-                </div>
-
-                <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line, #e5e7eb)" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
-                    <input type="checkbox" checked={form.allowPendencyResubmission}
-                      onChange={(e) => set("allowPendencyResubmission", e.target.checked)} />
-                    Liberar reenvio de documentos em pendência mesmo fora do prazo
-                  </label>
-                  <p className="muted small" style={{ marginTop: 6, maxWidth: 620 }}>
-                    Padrão <strong>ligado</strong>. Quando um analista devolve a inscrição como{" "}
-                    <strong>pendência</strong> (documento reprovado que precisa ser reenviado, ou correção na
-                    ficha), a análise normalmente acontece <strong>depois</strong> do fim da chamada. Com esta
-                    opção ligada, esses candidatos conseguem reenviar os documentos e corrigir a ficha mesmo
-                    após o prazo — <strong>somente</strong> as inscrições que a equipe colocou em pendência.
-                    Cadastros e primeiros envios continuam presos ao prazo da chamada. Desligue apenas se a
-                    Secretaria quiser encerrar o recebimento por completo na data-limite.
-                  </p>
-                  {form.allowPendencyResubmission && (
-                    <div className="field" style={{ maxWidth: 272, marginTop: 10 }}>
-                      <label className="field-label">Data limite para reenvio de pendências (opcional)</label>
-                      <input
-                        type="date"
-                        className="input"
-                        value={form.pendencyResubmissionDeadline ?? ""}
-                        onChange={(e) => setDate("pendencyResubmissionDeadline", e.target.value)}
-                      />
-                      <p className="muted small" style={{ marginTop: 6 }}>
-                        {form.pendencyResubmissionDeadline
-                          ? "Pendências podem reenviar até esta data (inclusive). Depois dela, o reenvio é bloqueado."
-                          : "Em branco: sem prazo extra — enquanto a inscrição estiver em pendência, o reenvio fica liberado."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            </>
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header"><h3 className="h-card-title">Encerramento automático por prazo documental</h3></div>
               <div className="card-body">
