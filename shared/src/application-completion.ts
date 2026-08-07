@@ -26,6 +26,7 @@ export interface CompletionFamilyMember {
   educationLevel?: string | null;
   occupation?: string | null;
   incomeSituations?: readonly string[] | null;
+  hasCnpj?: boolean | null;
   grossIncome?: MoneyValue;
   isStudent?: boolean | null;
   schoolName?: string | null;
@@ -179,6 +180,19 @@ export function familyCompletionIssues(
         "familia",
         "incomeSituations",
         `${name}: selecione ao menos uma situação de renda.`,
+        member.id,
+      );
+    }
+    if (
+      typeof member.age === "number" &&
+      member.age >= 18 &&
+      typeof member.hasCnpj !== "boolean"
+    ) {
+      addIssue(
+        issues,
+        "familia",
+        "hasCnpj",
+        `${name}: informe se possui CNPJ ativo ou inativo.`,
         member.id,
       );
     }

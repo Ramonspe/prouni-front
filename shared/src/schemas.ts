@@ -186,6 +186,7 @@ export const familyMemberSchema = z.object({
   occupation: txt(80).optional(),
   incomeSituations: z.array(incomeSituationSchema).max(12).optional(),
   receivesCommissionOvertime: z.boolean().optional(),
+  hasCnpj: z.boolean().nullable().optional(),
   companyInactive: z.boolean().optional(),
   grossIncome: moneyString.optional(),
   isStudent: z.boolean().optional(),
@@ -454,6 +455,7 @@ const docConditionSchema = z.enum([
   "IS_IMT_AFFILIATED",
   "HAS_UNDECLARED_ASSETS",
   "INCOME_COMMISSION_OVERTIME",
+  "HAS_CNPJ",
   "COMPANY_INACTIVE",
 ]);
 

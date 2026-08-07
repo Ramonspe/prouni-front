@@ -66,7 +66,7 @@ export function ApplicationDeclarationsCard({
             checked={optsForQuota}
             onChange={(event) => setOptsForQuota(event.target.checked)}
           />{" "}
-          Desejo concorrer pelas políticas afirmativas/cotas
+          Desejo concorrer pela cota racial (políticas afirmativas)
         </label>
         <label>
           <input
