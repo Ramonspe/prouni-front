@@ -564,6 +564,11 @@ export const adminApi = {
       method: "POST",
       body,
     }),
+  undoDocumentReview: (documentId: string) =>
+    apiFetch<AdminApplicationDetail>(
+      `/admin/documents/${documentId}/undo-review`,
+      { method: "POST" },
+    ),
   assignAnalyst: (appId: string, analystId: string | null) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/analyst`, {
       method: "PATCH",

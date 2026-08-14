@@ -24,6 +24,7 @@ import {
   IconEye,
   IconHistory,
   IconRefresh,
+  IconUndo,
   IconUpload,
   IconUser,
   IconX,
@@ -239,6 +240,15 @@ export default function AnalysisPage() {
       setRejectComment("");
     },
   });
+  const undoReviewMut = useMutation({
+    mutationFn: (documentId: string) => adminApi.undoDocumentReview(documentId),
+    onSuccess: () => {
+      invalidate();
+      setViewer((current) =>
+        current ? { ...current, status: "ENVIADO" } : current,
+      );
+    },
+  });
   const assignMut = useMutation({
     mutationFn: (analystId: string | null) =>
       adminApi.assignAnalyst(params.id, analystId),
@@ -370,6 +380,7 @@ export default function AnalysisPage() {
   const profile = d.summary.profile ? PROFILE[d.summary.profile] : null;
   const busy =
     reviewMut.isPending ||
+    undoReviewMut.isPending ||
     decideMut.isPending ||
     assignMut.isPending ||
     startMut.isPending ||
@@ -379,8 +390,8 @@ export default function AnalysisPage() {
   const reviewableStatus = [
     "analise_doc",
     "analise_socio",
-    "pendencia",
   ].includes(d.status);
+  const pendingCorrection = d.status === "pendencia";
   const assignedAnalystId =
     analystsQuery.data?.find((analyst) => analyst.name === d.analyst)?.id ?? null;
   const canStartAnalysis =
@@ -389,7 +400,9 @@ export default function AnalysisPage() {
     reviewableStatus && assignedAnalystId === user.id;
   const canManagePending =
     user.role === "ADMIN" || assignedAnalystId === user.id;
-  const reviewBlockedMessage = !assignedAnalystId
+  const reviewBlockedMessage = pendingCorrection
+      ? "A inscrição está aguardando a correção do candidato. A revisão documental e a atribuição de analista serão liberadas após o reenvio."
+      : !assignedAnalystId
       ? "Atribua um analista responsável antes de aprovar ou reprovar documentos."
       : d.status === "enviada"
         ? canStartAnalysis
@@ -914,11 +927,11 @@ export default function AnalysisPage() {
                         >
                           <IconX size={13} /> Fechar
                         </button>
-                        {canReviewDocuments && viewer.status !== "A_ENVIAR" && (
+                        {canReviewDocuments && viewer.status === "ENVIADO" && (
                           <>
                             <button
                               className="btn btn-secondary btn-sm"
-                              disabled={busy || viewer.status === "APROVADO"}
+                              disabled={busy}
                               onClick={() =>
                                 reviewMut.mutate(
                                   {
@@ -950,6 +963,22 @@ export default function AnalysisPage() {
                             </button>
                           </>
                         )}
+                        {canReviewDocuments &&
+                          (viewer.status === "APROVADO" ||
+                            viewer.status === "REPROVADO") && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: "4px 7px" }}
+                              disabled={busy}
+                              title="Desfazer decisão e voltar o documento para enviado"
+                              aria-label="Desfazer decisão do documento"
+                              onClick={() =>
+                                undoReviewMut.mutate(viewer.documentId)
+                              }
+                            >
+                              <IconUndo size={14} />
+                            </button>
+                          )}
                       </>
                     )}
                     <div
@@ -1166,13 +1195,11 @@ export default function AnalysisPage() {
                                   >
                                     <IconEye size={13} /> Ver
                                   </button>
-                                  {canReviewDocuments && (
+                                  {canReviewDocuments && doc.status === "ENVIADO" && (
                                     <>
                                       <button
                                         className="btn btn-ghost btn-sm"
-                                        disabled={
-                                          busy || doc.status === "APROVADO"
-                                        }
+                                        disabled={busy}
                                         onClick={() =>
                                           reviewMut.mutate({
                                             documentId: doc.documentId!,
@@ -1194,6 +1221,24 @@ export default function AnalysisPage() {
                                       </button>
                                     </>
                                   )}
+                                  {canReviewDocuments &&
+                                    (doc.status === "APROVADO" ||
+                                      doc.status === "REPROVADO") && (
+                                      <button
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ padding: "4px 7px" }}
+                                        disabled={busy}
+                                        title="Desfazer decisão e voltar o documento para enviado"
+                                        aria-label={`Desfazer decisão de ${doc.name}`}
+                                        onClick={() =>
+                                          undoReviewMut.mutate(
+                                            doc.documentId!,
+                                          )
+                                        }
+                                      >
+                                        <IconUndo size={14} />
+                                      </button>
+                                    )}
                                 </>
                               )}
                             </div>
@@ -1366,7 +1411,7 @@ export default function AnalysisPage() {
                 <select
                   className="input"
                   value={assignedAnalystId ?? ""}
-                  disabled={busy || user.role === "VIEWER"}
+                  disabled={busy || user.role === "VIEWER" || pendingCorrection}
                   onChange={(e) => assignMut.mutate(e.target.value || null)}
                 >
                   <option value="">Não atribuído</option>
@@ -1379,6 +1424,11 @@ export default function AnalysisPage() {
                 {user.role === "VIEWER" && (
                   <p className="muted small" style={{ marginTop: 6 }}>
                     Visualizadores não podem alterar o responsável.
+                  </p>
+                )}
+                {pendingCorrection && (
+                  <p className="muted small" style={{ marginTop: 6 }}>
+                    A atribuição fica bloqueada até o candidato concluir a correção.
                   </p>
                 )}
                 {canStartAnalysis && (

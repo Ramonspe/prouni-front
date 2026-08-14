@@ -391,6 +391,15 @@ function DocumentosPageContent({
   const data = docs.data;
   const appId = application?.id;
   const status = application?.status ?? "";
+
+  // A listagem de documentos também recupera pendências abertas criadas antes
+  // da reconciliação automática. Releia a inscrição para receber os novos
+  // itens e liberar seus respectivos slots sem exigir outra pendência.
+  useEffect(() => {
+    if (status !== "pendencia" || !uploadedQuery.isSuccess) return;
+    void qc.invalidateQueries({ queryKey: ["applications", "mine"] });
+  }, [qc, status, uploadedQuery.dataUpdatedAt, uploadedQuery.isSuccess]);
+
   const sentCount = (uploadedQuery.data ?? []).filter((u) => u.status !== "A_ENVIAR").length;
   const requiredItems = data?.categories.flatMap((category) => category.items.filter((item) => item.required)) ?? [];
   const sentRequiredCount = requiredItems.filter((item) => {

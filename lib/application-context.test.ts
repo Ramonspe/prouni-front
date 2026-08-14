@@ -81,6 +81,7 @@ function application(
           documentTypeId: null,
           familyMemberId: null,
           formSection: "OTHER",
+          resolvedAt: null,
           label: "Renda e despesas",
         },
         {
@@ -89,6 +90,7 @@ function application(
           documentTypeId: "doc-income",
           familyMemberId: "member-1",
           formSection: null,
+          resolvedAt: null,
           label: "Comprovante de renda",
         },
       ],
