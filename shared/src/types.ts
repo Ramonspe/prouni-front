@@ -301,6 +301,7 @@ export interface PendingRequestItemDto {
   documentTypeId: string | null;
   familyMemberId: string | null;
   formSection: PendingFormSection | null;
+  resolvedAt: string | null;
   label: string;
 }
 

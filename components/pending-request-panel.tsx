@@ -41,7 +41,10 @@ export function pendingDocumentProgress(
       item,
     ): item is PendingRequestItemDto & {
       documentTypeId: string;
-    } => item.kind === "DOCUMENT" && Boolean(item.documentTypeId),
+    } =>
+      item.kind === "DOCUMENT" &&
+      !item.resolvedAt &&
+      Boolean(item.documentTypeId),
   );
   const complete = documents.filter((item) =>
     valid.has(
@@ -70,16 +73,17 @@ export function PendingRequestPanel({
 }) {
   const request = application.openPendingRequest;
   const queryClient = useQueryClient();
+  const activeItems = request?.items.filter((item) => !item.resolvedAt) ?? [];
   const documentItems =
-    request?.items.filter((item) => item.kind === "DOCUMENT") ?? [];
+    activeItems.filter((item) => item.kind === "DOCUMENT");
   const uploaded = useQuery({
     queryKey: ["application", application.id, "documents"],
     queryFn: () => documentsApi.list(application.id),
     enabled: Boolean(request && documentItems.length > 0),
   });
   const progress = useMemo(
-    () => pendingDocumentProgress(request?.items ?? [], uploaded.data ?? []),
-    [request?.items, uploaded.data],
+    () => pendingDocumentProgress(activeItems, uploaded.data ?? []),
+    [activeItems, uploaded.data],
   );
 
   const submitMutation = useMutation({
@@ -131,7 +135,7 @@ export function PendingRequestPanel({
       </div>
 
       <ul className={styles.items}>
-        {request.items.map((item) => {
+        {activeItems.map((item) => {
           const isDocument = item.kind === "DOCUMENT";
           const isComplete =
             isDocument &&

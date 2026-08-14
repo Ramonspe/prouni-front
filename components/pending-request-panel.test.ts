@@ -12,6 +12,7 @@ const items: PendingRequestItemDto[] = [
     documentTypeId: "income",
     familyMemberId: "member-1",
     formSection: null,
+    resolvedAt: null,
     label: "Renda do integrante",
   },
   {
@@ -20,6 +21,7 @@ const items: PendingRequestItemDto[] = [
     documentTypeId: "identity",
     familyMemberId: null,
     formSection: null,
+    resolvedAt: null,
     label: "Documento pessoal",
   },
   {
@@ -28,6 +30,7 @@ const items: PendingRequestItemDto[] = [
     documentTypeId: null,
     familyMemberId: null,
     formSection: "OTHER",
+    resolvedAt: null,
     label: "Renda e despesas",
   },
 ];
@@ -64,5 +67,14 @@ describe("pendingDocumentProgress", () => {
         { ...uploaded[0], familyMemberId: null },
       ]),
     ).toEqual({ total: 1, complete: 0, missing: 1 });
+  });
+
+  it("ignores a document that is no longer required", () => {
+    expect(
+      pendingDocumentProgress(
+        [{ ...items[1], resolvedAt: "2026-08-11T12:00:00.000Z" }],
+        [],
+      ),
+    ).toEqual({ total: 0, complete: 0, missing: 0 });
   });
 });

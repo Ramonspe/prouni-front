@@ -9,6 +9,7 @@ import { IconArrowDown, IconArrowUp, IconChevL, IconChevR, IconDownload, IconPri
 import { useRequireStaff } from "@/lib/use-require-auth";
 import { adminApi } from "@/lib/api";
 import { useAdminProcessContext } from "@/lib/use-admin-process-context";
+import { matchesPersonSearch } from "@/lib/search";
 import { PRESELECTION_CALLS, STATUS_MAP, type AdminApplicationRow, type PreselectionCall, type ProcessStatus, type RmBulkExportResult } from "@prouni/shared";
 
 type Tab = "all" | "review" | "pending" | "decided";
@@ -127,13 +128,7 @@ function CandidatosInner() {
     return true;
   };
   const bySearch = (c: AdminApplicationRow) => {
-    const s = search.trim().toLowerCase();
-    if (!s) return true;
-    return (
-      c.name.toLowerCase().includes(s) ||
-      c.cpf.replace(/\D/g, "").includes(s.replace(/\D/g, "")) ||
-      c.protocol.toLowerCase().includes(s)
-    );
+    return matchesPersonSearch(c, search);
   };
   const byCourse = (c: AdminApplicationRow) => courseFilter === "all" || c.course === courseFilter;
   const byStatus = (c: AdminApplicationRow) => statusFilter === "all" || c.status === statusFilter;
