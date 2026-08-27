@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ConfiguracoesPage from "./page";
+
+let staffRole = "ADMIN";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
@@ -17,7 +19,7 @@ vi.mock("@/components/process-context-selector", () => ({
 }));
 
 vi.mock("@/lib/use-require-auth", () => ({
-  useRequireStaff: () => ({ user: { role: "ADMIN" } }),
+  useRequireStaff: () => ({ user: { role: staffRole } }),
 }));
 
 vi.mock("@/lib/auth-context", () => ({
@@ -73,6 +75,10 @@ function renderPage() {
 }
 
 describe("Pré-selecionados", () => {
+  beforeEach(() => {
+    staffRole = "ADMIN";
+  });
+
   it("orienta a criar uma chamada no próprio fluxo quando apenas o histórico está selecionado", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -90,5 +96,18 @@ describe("Pré-selecionados", () => {
       screen.getByRole("heading", { name: "Nova chamada" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Ciclo 2026\/2/i)).toBeInTheDocument();
+  });
+
+  it("permite a importação pelo analista sem exibir aviso", () => {
+    staffRole = "ANALYST";
+    renderPage();
+
+    expect(
+      screen.getByRole("heading", { name: "Importar planilha (CSV ou Excel)" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Importação de pré-selecionados")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Novo pré-selecionado" }),
+    ).not.toBeInTheDocument();
   });
 });

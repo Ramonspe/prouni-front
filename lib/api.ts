@@ -598,6 +598,11 @@ export const adminApi = {
       `/admin/applications/${appId}/pending-requests/reopen`,
       { method: "POST", body },
     ),
+  regularizePending: (appId: string, body: PendingRequestInput) =>
+    apiFetch<PendingRequestDto>(
+      `/admin/applications/${appId}/pending-requests/regularize`,
+      { method: "POST", body },
+    ),
   setIncome: (appId: string, body: AdminIncomeInput) =>
     apiFetch<AdminApplicationDetail>(`/admin/applications/${appId}/income`, {
       method: "PATCH",

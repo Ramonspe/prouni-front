@@ -1,6 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { UserDto } from "@prouni/shared";
 import { UserSchedulePermissionControl } from "./user-permission-control";
 
@@ -19,49 +18,16 @@ function staff(overrides: Partial<UserDto> = {}): UserDto {
 }
 
 describe("UserSchedulePermissionControl", () => {
-  it("concede e revoga apenas por uma ação explícita no analista", async () => {
-    const onToggle = vi.fn();
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <UserSchedulePermissionControl user={staff()} onToggle={onToggle} />,
-    );
+  it("informa acesso implícito para administradores e analistas", () => {
+    const { rerender } = render(<UserSchedulePermissionControl user={staff()} />);
+    expect(screen.getByText("Pode gerenciar")).toBeInTheDocument();
 
-    const grant = screen.getByRole("button", {
-      name: "Conceder gestão de cronograma para Analista de Teste",
-    });
-    expect(grant).toHaveAttribute("aria-pressed", "false");
-    await user.click(grant);
-    expect(onToggle).toHaveBeenCalledWith(staff());
-
-    rerender(
-      <UserSchedulePermissionControl
-        user={staff({ permissions: ["MANAGE_SCHEDULE"] })}
-        onToggle={onToggle}
-      />,
-    );
-    expect(
-      screen.getByRole("button", {
-        name: "Revogar gestão de cronograma para Analista de Teste",
-      }),
-    ).toHaveAttribute("aria-pressed", "true");
+    rerender(<UserSchedulePermissionControl user={staff({ role: "ADMIN" })} />);
+    expect(screen.getByText("Pode gerenciar")).toBeInTheDocument();
   });
 
-  it("explica que ADMIN é implícito e VIEWER não recebe a delegação", () => {
-    const { rerender } = render(
-      <UserSchedulePermissionControl
-        user={staff({ role: "ADMIN" })}
-        onToggle={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("Acesso implícito")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-
-    rerender(
-      <UserSchedulePermissionControl
-        user={staff({ role: "VIEWER" })}
-        onToggle={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("Não aplicável")).toBeInTheDocument();
+  it("mantém visualizadores em consulta", () => {
+    render(<UserSchedulePermissionControl user={staff({ role: "VIEWER" })} />);
+    expect(screen.getByText("Somente consulta")).toBeInTheDocument();
   });
 });

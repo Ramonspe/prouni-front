@@ -82,6 +82,8 @@ export default function ConfiguracoesPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const isAdmin = user?.role === "ADMIN";
+  const canImportPreselection =
+    user?.role === "ADMIN" || user?.role === "ANALYST";
   const canRefresh = user?.role === "ADMIN" || user?.role === "ANALYST";
   const processContext = useAdminProcessContext(!!user);
 
@@ -408,18 +410,19 @@ export default function ConfiguracoesPage() {
           </div>
         )}
 
-        {isAdmin && !processContext.selectedCall && !showCallForm && (
+        {canImportPreselection && !processContext.selectedCall && !showCallForm && (
           <div style={{ marginTop: 14, marginBottom: 14 }}>
             <Banner tone="info" title="Escolha a chamada que receberá os candidatos">
-              Para cadastrar ou importar pré-selecionados, selecione uma chamada
-              específica. Se ela ainda não existir neste ciclo, use “Criar
-              chamada” acima. O modo “Todas as chamadas” é apenas para consulta
-              do histórico.
+              Para importar pré-selecionados, selecione uma chamada específica.
+              {isAdmin
+                ? " Se ela ainda não existir neste ciclo, use “Criar chamada” acima."
+                : " Solicite a criação da chamada à administração, se necessário."}{" "}
+              O modo “Todas as chamadas” é apenas para consulta do histórico.
             </Banner>
           </div>
         )}
 
-        {!isAdmin && (
+        {!canImportPreselection && (
           <Banner tone="info" title="Acesso somente leitura">
             Seu perfil pode consultar a lista. Cadastro, edição, cancelamento e
             importação são feitos por administradores.
@@ -427,7 +430,7 @@ export default function ConfiguracoesPage() {
         )}
 
         {/* Importação */}
-        {isAdmin && (
+        {canImportPreselection && (
           <div className="card" style={{ marginBottom: 14 }}>
             <div className="card-header">
               <h3 className="h-card-title">Importar planilha (CSV ou Excel)</h3>

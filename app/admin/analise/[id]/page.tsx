@@ -195,6 +195,10 @@ export default function AnalysisPage() {
   const [reopenSections, setReopenSections] = useState<PendingFormSection[]>([]);
   const [reopenDueDate, setReopenDueDate] = useState("");
   const [reopenDueTime, setReopenDueTime] = useState("");
+  const [regularizeReason, setRegularizeReason] = useState("");
+  const [regularizeDocumentKeys, setRegularizeDocumentKeys] = useState<string[]>([]);
+  const [regularizeDueDate, setRegularizeDueDate] = useState("");
+  const [regularizeDueTime, setRegularizeDueTime] = useState("");
   const [viewer, setViewer] = useState<{
     documentId: string;
     url: string;
@@ -301,6 +305,17 @@ export default function AnalysisPage() {
       setReopenDueTime("");
     },
   });
+  const regularizePendingMut = useMutation({
+    mutationFn: (input: PendingRequestInput) =>
+      adminApi.regularizePending(params.id, input),
+    onSuccess: () => {
+      invalidate();
+      setRegularizeReason("");
+      setRegularizeDocumentKeys([]);
+      setRegularizeDueDate("");
+      setRegularizeDueTime("");
+    },
+  });
   const exportRmMut = useMutation({
     mutationFn: () => adminApi.exportToRm(params.id),
     onSuccess: invalidate,
@@ -385,7 +400,8 @@ export default function AnalysisPage() {
     assignMut.isPending ||
     startMut.isPending ||
     extendPendingMut.isPending ||
-    reopenPendingMut.isPending;
+    reopenPendingMut.isPending ||
+    regularizePendingMut.isPending;
   const canRefresh = user.role === "ADMIN" || user.role === "ANALYST";
   const reviewableStatus = [
     "analise_doc",
@@ -400,6 +416,8 @@ export default function AnalysisPage() {
     reviewableStatus && assignedAnalystId === user.id;
   const canManagePending =
     user.role === "ADMIN" || assignedAnalystId === user.id;
+  const canRegularizeOrphanedPending =
+    user.role === "ADMIN" || user.role === "ANALYST";
   const reviewBlockedMessage = pendingCorrection
       ? "A inscrição está aguardando a correção do candidato. A revisão documental e a atribuição de analista serão liberadas após o reenvio."
       : !assignedAnalystId
@@ -494,6 +512,9 @@ export default function AnalysisPage() {
   const selectedReopenDocuments = rejectedDocuments.filter((document) =>
     reopenDocumentKeys.includes(documentPendingKey(document)),
   );
+  const selectedRegularizeDocuments = rejectedDocuments.filter((document) =>
+    regularizeDocumentKeys.includes(documentPendingKey(document)),
+  );
   const pendingItemsCount =
     selectedPendingDocuments.length + pendingSections.length;
   const pendingDeadlineComplete =
@@ -501,6 +522,7 @@ export default function AnalysisPage() {
     Boolean(pendingDueDate && pendingDueTime);
   const reopenItemsCount =
     selectedReopenDocuments.length + reopenSections.length;
+  const regularizeItemsCount = selectedRegularizeDocuments.length;
   const callLabel =
     d.selectionCall?.name ??
     PRESELECTION_CALLS.find((call) => call.value === d.call)?.label ??
@@ -695,6 +717,159 @@ export default function AnalysisPage() {
                 {extendPendingMut.isPending
                   ? "Prorrogando…"
                   : "Prorrogar prazo"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {d.status === "pendencia" && !d.openPendingRequest && (
+          <div className="card card-pad" style={{ marginBottom: 16 }}>
+            <Banner tone="danger" title="Pendência sem solicitação aberta">
+              Esta inscrição está bloqueada para correção porque não há uma
+              solicitação ativa que delimite os itens liberados. Regularize
+              somente após conferir o histórico.
+            </Banner>
+            <div style={{ marginTop: 12 }}>
+              <h3 className="h-card-title">Regularizar pendência</h3>
+              <p className="muted small" style={{ margin: "5px 0 12px" }}>
+                Cria uma nova solicitação auditada, sem apagar a decisão ou as
+                versões anteriores. O candidato só poderá reenviar os
+                documentos marcados abaixo.
+              </p>
+              <label className="field">
+                <span className="field-label">Justificativa da regularização</span>
+                <textarea
+                  className="input"
+                  rows={3}
+                  maxLength={2000}
+                  value={regularizeReason}
+                  disabled={
+                    !canRegularizeOrphanedPending || regularizePendingMut.isPending
+                  }
+                  onChange={(event) => setRegularizeReason(event.target.value)}
+                  placeholder="Ex.: Solicitação anterior expirou sem permitir o reenvio."
+                />
+              </label>
+              {rejectedDocuments.length > 0 ? (
+                <div style={{ display: "grid", gap: 7, marginTop: 10 }}>
+                  <span className="field-label">Documentos liberados para correção</span>
+                  {rejectedDocuments.map((document) => {
+                    const key = documentPendingKey(document);
+                    return (
+                      <label
+                        key={key}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "flex-start",
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={regularizeDocumentKeys.includes(key)}
+                          disabled={
+                            !canRegularizeOrphanedPending || regularizePendingMut.isPending
+                          }
+                          onChange={(event) =>
+                            setRegularizeDocumentKeys((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, key])]
+                                : current.filter((candidate) => candidate !== key),
+                            )
+                          }
+                        />
+                        <span>
+                          {document.name}
+                          {document.memberName ? ` — ${document.memberName}` : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="upload-meta error" style={{ marginTop: 10 }}>
+                  Não há documento reprovado disponível para regularizar.
+                </p>
+              )}
+              <div
+                className="rgrid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                <label className="field">
+                  <span className="field-label">Nova data-limite</span>
+                  <input
+                    className="input"
+                    type="date"
+                    value={regularizeDueDate}
+                    disabled={
+                      !canRegularizeOrphanedPending || regularizePendingMut.isPending
+                    }
+                    onChange={(event) => setRegularizeDueDate(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field-label">Horário de Brasília</span>
+                  <input
+                    className="input"
+                    type="time"
+                    value={regularizeDueTime}
+                    disabled={
+                      !canRegularizeOrphanedPending || regularizePendingMut.isPending
+                    }
+                    onChange={(event) => setRegularizeDueTime(event.target.value)}
+                  />
+                </label>
+              </div>
+              {!canRegularizeOrphanedPending && (
+                <p className="muted small" style={{ marginTop: 7 }}>
+                  Somente um administrador ou analista pode regularizar esta situação.
+                </p>
+              )}
+              {regularizePendingMut.isError && (
+                <p className="upload-meta error" style={{ marginTop: 7 }}>
+                  {(regularizePendingMut.error as Error).message}
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 10 }}
+                disabled={
+                  !canRegularizeOrphanedPending ||
+                  regularizePendingMut.isPending ||
+                  !regularizeReason.trim() ||
+                  !regularizeDueDate ||
+                  !regularizeDueTime ||
+                  regularizeItemsCount === 0
+                }
+                onClick={() =>
+                  regularizePendingMut.mutate({
+                    reason: regularizeReason.trim(),
+                    dueAt: composeBrasiliaInstant(
+                      regularizeDueDate,
+                      regularizeDueTime,
+                    ),
+                    items: selectedRegularizeDocuments.map((document) => ({
+                      kind: "DOCUMENT" as const,
+                      documentTypeId: document.documentTypeId,
+                      familyMemberId: document.familyMemberId,
+                      label: document.memberName
+                        ? `${document.name} — ${document.memberName}`
+                        : document.name,
+                    })),
+                  })
+                }
+              >
+                <IconRefresh size={14} />{" "}
+                {regularizePendingMut.isPending
+                  ? "Regularizando…"
+                  : "Regularizar e liberar correção"}
               </button>
             </div>
           </div>

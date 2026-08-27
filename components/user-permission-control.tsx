@@ -3,41 +3,21 @@ import { Badge } from "./ui";
 
 export function UserSchedulePermissionControl({
   user,
-  pending = false,
-  onToggle,
+  pending: _pending = false,
+  onToggle: _onToggle,
 }: {
   user: UserDto;
+  /** Compatibilidade com cópias locais da tela de usuários. */
   pending?: boolean;
-  onToggle: (user: UserDto) => void;
+  /** Não tem efeito: a gestão de cronograma passou a ser definida pelo perfil. */
+  onToggle?: (user: UserDto) => void;
 }) {
-  if (user.role === "ADMIN") {
+  if (user.role === "ADMIN" || user.role === "ANALYST") {
     return (
       <Badge tone="success" dot={false}>
-        Acesso implícito
+        Pode gerenciar
       </Badge>
     );
   }
-  if (user.role !== "ANALYST") {
-    return <span className="muted small">Não aplicável</span>;
-  }
-
-  const granted = user.permissions.includes("MANAGE_SCHEDULE");
-  return (
-    <button
-      className={granted ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"}
-      type="button"
-      aria-pressed={granted}
-      aria-label={`${
-        granted ? "Revogar" : "Conceder"
-      } gestão de cronograma para ${user.fullName}`}
-      disabled={pending}
-      onClick={() => onToggle(user)}
-    >
-      {pending
-        ? "Atualizando…"
-        : granted
-          ? "Pode gerenciar"
-          : "Somente consulta"}
-    </button>
-  );
+  return <span className="muted small">Somente consulta</span>;
 }
