@@ -81,25 +81,6 @@ export default function UsuariosPage() {
     onSuccess: invalidate,
   });
 
-  const permissionMut = useMutation({
-    mutationFn: (staffUser: UserDto) => {
-      const currentlyGranted = staffUser.permissions.includes(
-        "MANAGE_SCHEDULE",
-      );
-      return usersApi.updatePermissions(staffUser.id, {
-        permissions: currentlyGranted ? [] : ["MANAGE_SCHEDULE"],
-      });
-    },
-    onSuccess: (updated) => {
-      qc.setQueryData<UserDto[]>(["admin", "users"], (current) =>
-        current?.map((staffUser) =>
-          staffUser.id === updated.id ? updated : staffUser,
-        ),
-      );
-      void invalidate();
-    },
-  });
-
   const startEdit = (u: UserDto) => {
     setEditingId(u.id);
     setForm({ fullName: u.fullName, cpf: u.cpf, email: u.email, role: u.role, password: "" });
@@ -117,7 +98,7 @@ export default function UsuariosPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <h1 className="page-title">Usuários</h1>
-            <p className="page-subtitle">Cadastro da equipe e delegação da gestão de cronogramas. Administradores possuem acesso implícito; a permissão adicional pode ser concedida somente a analistas.</p>
+            <p className="page-subtitle">Cadastro e administração da equipe. Administradores e analistas podem gerenciar cronogramas.</p>
           </div>
           {isAdmin && (
             <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
@@ -224,28 +205,7 @@ export default function UsuariosPage() {
                           <td className="mono">{u.cpf}</td>
                           <td>{u.email}</td>
                           <td><Badge tone={ROLE_INFO[u.role].tone}>{ROLE_INFO[u.role].label}</Badge></td>
-                          <td>
-                            <UserSchedulePermissionControl
-                              user={u}
-                              pending={
-                                permissionMut.isPending &&
-                                permissionMut.variables?.id === u.id
-                              }
-                              onToggle={(staffUser) => {
-                                const granted = staffUser.permissions.includes(
-                                  "MANAGE_SCHEDULE",
-                                );
-                                const action = granted ? "revogar" : "conceder";
-                                if (
-                                  confirm(
-                                    `Deseja ${action} a gestão de cronogramas para ${staffUser.fullName}?`,
-                                  )
-                                ) {
-                                  permissionMut.mutate(staffUser);
-                                }
-                              }}
-                            />
-                          </td>
+                          <td><UserSchedulePermissionControl user={u} /></td>
                           <td>{u.active ? <Badge tone="success">Ativo</Badge> : <Badge tone="neutral">Inativo</Badge>}</td>
                           <td className="muted small">{fmtWhen(u.createdAt)}</td>
                           <td>
@@ -273,9 +233,7 @@ export default function UsuariosPage() {
                 {rows.length} de {all.length} usuário(s){" "}
                 {toggleMut.isError
                   ? `· ${(toggleMut.error as Error).message}`
-                  : permissionMut.isError
-                    ? `· ${(permissionMut.error as Error).message}`
-                    : ""}
+                  : ""}
               </div>
             </div>
           </>

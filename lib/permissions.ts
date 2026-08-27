@@ -18,5 +18,7 @@ export function hasSystemPermission(
 export function canManageSchedule(
   user: PermissionAwareUser | null | undefined,
 ): boolean {
-  return hasSystemPermission(user, "MANAGE_SCHEDULE");
+  return Boolean(
+    user && (user.role === "ADMIN" || user.role === "ANALYST"),
+  );
 }

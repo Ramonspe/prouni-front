@@ -6,17 +6,17 @@ describe("permissões da sessão", () => {
     expect(canManageSchedule({ role: "ADMIN", permissions: [] })).toBe(true);
   });
 
-  it("libera a gestão para quem recebeu MANAGE_SCHEDULE", () => {
+  it("libera a gestão de cronograma para todo analista", () => {
     expect(
       canManageSchedule({
         role: "ANALYST",
-        permissions: ["MANAGE_SCHEDULE"],
+        permissions: [],
       }),
     ).toBe(true);
   });
 
-  it("mantém a consulta sem transformar ausência de permissão em gestão", () => {
-    expect(canManageSchedule({ role: "ANALYST", permissions: [] })).toBe(false);
+  it("mantém o visualizador em consulta", () => {
+    expect(canManageSchedule({ role: "VIEWER", permissions: [] })).toBe(false);
     expect(hasSystemPermission(null, "MANAGE_SCHEDULE")).toBe(false);
   });
 });
