@@ -28,6 +28,7 @@ import { useAuth } from "@/lib/auth-context";
 import { maskCpf } from "@/lib/format";
 import { useAdminProcessContext } from "@/lib/use-admin-process-context";
 import {
+  CANDIDATE_PURGE_CONFIRMATION,
   PRESELECTION_CALLS,
   type PreselectionCall,
   type PreselectionEntryDto,
@@ -209,6 +210,10 @@ export default function ConfiguracoesPage() {
       if (fileRef.current) fileRef.current.value = "";
     },
   });
+  const purgeCandidateMut = useMutation({
+    mutationFn: (vars: { id: string; confirmation: string }) => preselectionApi.purgeCandidate(vars.id, vars.confirmation),
+    onSuccess: invalidate,
+  });
   const resetPasswordMut = useMutation({
     mutationFn: (vars: { candidateId: string; password: string }) =>
       authApi.resetCandidatePassword(vars.candidateId, vars.password),
@@ -301,6 +306,13 @@ export default function ConfiguracoesPage() {
     ) {
       impersonateMut.mutate(e.candidateUserId);
     }
+  };
+  const purgeCandidate = (e: PreselectionEntryDto) => {
+    const confirmation = window.prompt(
+      `A exclusão de ${e.fullName ?? e.cpf} é irreversível. Digite exatamente "${CANDIDATE_PURGE_CONFIRMATION}" para apagar a conta, inscrição e documentos.`,
+    );
+    if (confirmation === null) return;
+    purgeCandidateMut.mutate({ id: e.id, confirmation });
   };
 
   return (
@@ -844,6 +856,17 @@ export default function ConfiguracoesPage() {
                             justifyContent: "flex-end",
                           }}
                         >
+                          {(e.applicationStatus === "indeferido" ||
+                            e.state === "CANCELLED") && (
+                            <button
+                              className="btn btn-danger btn-sm"
+                              disabled={purgeCandidateMut.isPending}
+                              title="Excluir definitivamente"
+                              onClick={() => purgeCandidate(e)}
+                            >
+                              <IconTrash size={13} /> Excluir definitivamente
+                            </button>
+                          )}
                           <button
                             className="btn btn-ghost btn-sm"
                             disabled={entryState(e) !== "AVAILABLE"}
@@ -920,6 +943,7 @@ export default function ConfiguracoesPage() {
             {impersonateMut.isError
               ? ` · ${(impersonateMut.error as Error).message}`
               : ""}
+            {purgeCandidateMut.isError ? ` · ${(purgeCandidateMut.error as Error).message}` : ""}
           </div>
         </div>
       </div>

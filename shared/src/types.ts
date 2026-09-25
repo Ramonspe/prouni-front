@@ -678,6 +678,7 @@ export interface PreselectionEntryDto {
     name: string;
     campus: { id: string; code: string; name: string };
   } | null;
+  applicationStatus?: ProcessStatus | null;
   state?: "AVAILABLE" | "CLAIMED" | "CANCELLED";
   createdAt: string;
 }
