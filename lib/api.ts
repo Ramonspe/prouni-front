@@ -679,6 +679,11 @@ export const preselectionApi = {
       method: "DELETE",
       body: reason ? { reason } : undefined,
     }),
+  purgeCandidate: (id: string, confirmation: string) =>
+    apiFetch<{ ok: true; storageCleanupFailed: number }>(`/admin/preselection/${id}/candidate`, {
+      method: "DELETE",
+      body: { confirmation },
+    }),
   import: (file: File, call?: string, callId?: string) => {
     const fd = new FormData();
     fd.append("file", file);

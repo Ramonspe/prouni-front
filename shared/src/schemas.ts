@@ -412,6 +412,9 @@ export const databaseResetSchema = z
   });
 export type DatabaseResetSchema = z.infer<typeof databaseResetSchema>;
 
+/** Confirmação textual para exclusão irreversível de um candidato individual. */
+export const CANDIDATE_PURGE_CONFIRMATION = "confirmar";
+
 /** Perfis de equipe selecionáveis no cadastro de usuários (exclui CANDIDATE). */
 export const staffRoleSchema = z.enum(["ADMIN", "ANALYST", "VIEWER"]);
 
