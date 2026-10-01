@@ -85,6 +85,7 @@ const adminNav: NavItem[] = [
     icon: IconSettings,
     children: [
       { id: "presel", label: "Pré-selecionados", href: "/admin/configuracoes" },
+      { id: "calls-rm", label: "Chamadas e RM", href: "/admin/configuracoes/chamadas-rm", match: "/admin/configuracoes/chamadas-rm" },
       { id: "schedule", label: "Cronograma e prazos", href: "/admin/configuracoes/cronograma", match: "/admin/configuracoes/cronograma" },
       { id: "users", label: "Usuários", href: "/admin/configuracoes/usuarios", match: "/admin/configuracoes/usuarios" },
       { id: "params", label: "Parâmetros do sistema", href: "/admin/configuracoes/parametros", match: "/admin/configuracoes/parametros" },

@@ -290,6 +290,7 @@ export const selectionCallKindSchema = z.enum([
   "FIRST_CALL",
   "SECOND_CALL",
   "WAITLIST",
+  "OTHER",
 ]);
 
 export const selectionCallInputSchema = z.object({
@@ -303,6 +304,12 @@ export const selectionCallInputSchema = z.object({
   name: txt(80).min(1, "Informe o nome da chamada"),
   kind: selectionCallKindSchema,
   sequence: z.coerce.number().int().min(1).max(999),
+  rmProcessoSeletivoId: z.coerce
+    .number()
+    .int("Informe o IDPS do processo seletivo no RM")
+    .positive("Informe um IDPS positivo do processo seletivo no RM")
+    .max(2_147_483_647, "IDPS do processo seletivo no RM inválido")
+    .optional(),
   timeZone: txt(80)
     .default("America/Sao_Paulo")
     .refine(
