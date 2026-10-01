@@ -234,6 +234,7 @@ export interface SelectionCallSummaryDto {
   sequence: number;
   status: SelectionCallStatus;
   timeZone: string;
+  rmProcessoSeletivoId: number | null;
 }
 
 export interface CallScheduleWindowDto {
