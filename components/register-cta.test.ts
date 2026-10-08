@@ -27,6 +27,7 @@ const status: RegistrationStatusDto = {
         sequence: 1,
         status: "PUBLISHED",
         timeZone: "America/Sao_Paulo",
+    rmProcessoSeletivoId: 85,
       },
       startsAt: "2026-07-15T11:00:00.000Z",
       endsAt: "2026-07-24T21:00:00.000Z",

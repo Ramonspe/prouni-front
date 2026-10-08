@@ -38,6 +38,7 @@ function application(
       sequence: 2,
       status: "PUBLISHED",
       timeZone: "America/Sao_Paulo",
+    rmProcessoSeletivoId: 85,
     },
     capabilities: {
       editForm: {

@@ -49,6 +49,7 @@ import type {
   SelectionCallDto,
   SelectionCallInput,
   SelectionCallSummaryDto,
+  RmCatalogPreviewDto,
   SocioFormDto,
   SocioFormInput,
   SystemPermissionName,
@@ -830,6 +831,15 @@ export const selectionCallsApi = {
       method: "PATCH",
       body,
     }),
+  previewRmCatalog: (id: string) =>
+    apiFetch<RmCatalogPreviewDto>(
+      `/admin/selection-calls/${id}/rm-catalog/preview`,
+    ),
+  applyRmCatalog: (id: string) =>
+    apiFetch<RmCatalogPreviewDto>(
+      `/admin/selection-calls/${id}/rm-catalog/apply`,
+      { method: "POST" },
+    ),
   saveDraft: (id: string, body: CallScheduleInput) =>
     apiFetch<SelectionCallDto>(`/admin/selection-calls/${id}/schedule/draft`, {
       method: "PUT",
