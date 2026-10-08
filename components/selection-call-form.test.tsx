@@ -13,6 +13,7 @@ const call: SelectionCallSummaryDto = {
   sequence: 2,
   status: "DRAFT",
   timeZone: "America/Sao_Paulo",
+  rmProcessoSeletivoId: 85,
 };
 
 describe("SelectionCallForm", () => {

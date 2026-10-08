@@ -259,6 +259,24 @@ export interface SelectionCallDto extends SelectionCallSummaryDto {
   draftSchedule: CallScheduleRevisionDto | null;
 }
 
+/** Prévia read-only do processo e das áreas ofertadas encontradas no RM. */
+export interface RmCatalogPreviewDto {
+  keyword: string;
+  processes: Array<{ idps: number; name: string; active: boolean | null }>;
+  selected: { idps: number; name: string; active: boolean | null } | null;
+  areas: Array<{ id: number; name: string; campus: string | null }>;
+  mappings: Array<{
+    courseId: string;
+    courseName: string;
+    campusName: string;
+    areaId: number;
+    areaName: string;
+    areaCampus: string | null;
+  }>;
+  issues: string[];
+  ready: boolean;
+}
+
 export interface ActionCapabilityDto {
   allowed: boolean;
   reason: string | null;
